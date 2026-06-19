@@ -29,8 +29,8 @@ Route::get('/health', fn () => response()->json([
 |--------------------------------------------------------------------------
 */
 // Phase 2 — Auth
-// Route::post('/auth/login', [\App\Http\Controllers\Auth\AuthController::class, 'login'])
-//     ->middleware('throttle:login');
+Route::post('/auth/login', [\App\Http\Controllers\Auth\AuthController::class, 'login'])
+    ->middleware('throttle:login');
 
 /*
 |--------------------------------------------------------------------------
@@ -40,9 +40,9 @@ Route::get('/health', fn () => response()->json([
 Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
 
     // Phase 2 — Auth/session
-    // Route::post('/auth/logout', [\App\Http\Controllers\Auth\AuthController::class, 'logout']);
-    // Route::get('/auth/me', [\App\Http\Controllers\Auth\AuthController::class, 'me']);
-    // Route::put('/auth/change-password', [\App\Http\Controllers\Auth\AuthController::class, 'changePassword']);
+    Route::post('/auth/logout', [\App\Http\Controllers\Auth\AuthController::class, 'logout']);
+    Route::get('/auth/me', [\App\Http\Controllers\Auth\AuthController::class, 'me']);
+    Route::put('/auth/change-password', [\App\Http\Controllers\Auth\AuthController::class, 'changePassword']);
 
     // Routes below force a password change before access (except change-password above).
     Route::middleware('password.changed')->group(function (): void {
