@@ -89,6 +89,19 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         */
         Route::prefix('super-admin')->middleware('role:super_admin')->group(function (): void {
             // Phase 3 — College settings, schools CRUD, CBT admin accounts, audit logs
+            Route::get('/stats', [\App\Http\Controllers\SuperAdmin\DashboardController::class, 'stats']);
+
+            Route::get('/college', [\App\Http\Controllers\SuperAdmin\CollegeController::class, 'show']);
+            Route::put('/college', [\App\Http\Controllers\SuperAdmin\CollegeController::class, 'update']);
+
+            Route::apiResource('schools', \App\Http\Controllers\SuperAdmin\SchoolController::class);
+
+            Route::apiResource('cbt-admins', \App\Http\Controllers\SuperAdmin\CbtAdminController::class)
+                ->parameters(['cbt-admins' => 'cbt_admin'])
+                ->except(['show']);
+            Route::post('/cbt-admins/{cbt_admin}/reset-password', [\App\Http\Controllers\SuperAdmin\CbtAdminController::class, 'resetPassword']);
+
+            Route::get('/audit-logs', [\App\Http\Controllers\SuperAdmin\AuditLogController::class, 'index']);
         });
     });
 });
