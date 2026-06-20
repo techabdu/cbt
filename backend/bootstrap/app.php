@@ -4,6 +4,7 @@ use App\Http\Middleware\EnsureOfflineMode;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureSchoolScope;
 use App\Http\Middleware\ForcePasswordChange;
+use App\Http\Middleware\ResolveExamSession;
 use App\Http\Middleware\SyncSecretKeyAuth;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'school.scope' => EnsureSchoolScope::class,
             'sync.secret' => SyncSecretKeyAuth::class,
             'offline.mode' => EnsureOfflineMode::class,
+            'exam.session' => ResolveExamSession::class,
             'password.changed' => ForcePasswordChange::class,
         ]);
     })

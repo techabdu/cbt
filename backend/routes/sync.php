@@ -21,8 +21,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('sync')->middleware('sync.secret')->group(function (): void {
     // Phase 8 — Offline receives pushed exam payload
-    // Route::post('/receive-exam', [\App\Http\Controllers\Sync\PushReceiveController::class, 'store']);
+    Route::post('/receive-exam', [\App\Http\Controllers\Sync\PushReceiveController::class, 'store']);
 
     // Phase 9 — Online pulls results from offline
-    // Route::get('/results/{exam}', [\App\Http\Controllers\Sync\ResultsPullController::class, 'show']);
+    Route::get('/results/{exam}', [\App\Http\Controllers\Sync\ResultsPullController::class, 'show']);
 });
