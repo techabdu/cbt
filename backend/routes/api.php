@@ -115,6 +115,25 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         */
         Route::prefix('cbt-admin')->middleware('role:cbt_admin')->group(function (): void {
             // Phase 7 — Exams, code generation, role management
+            Route::get('/stats', [\App\Http\Controllers\CbtAdmin\DashboardController::class, 'stats']);
+
+            // Approved question banks (read-only) to build exams from
+            Route::get('/question-banks', [\App\Http\Controllers\CbtAdmin\QuestionBankController::class, 'index']);
+            Route::get('/question-banks/{questionBank}', [\App\Http\Controllers\CbtAdmin\QuestionBankController::class, 'show']);
+
+            // Exams
+            Route::apiResource('exams', \App\Http\Controllers\CbtAdmin\ExamController::class);
+
+            // Exam codes (nested under an exam)
+            Route::get('/exams/{exam}/codes', [\App\Http\Controllers\CbtAdmin\ExamCodeController::class, 'index']);
+            Route::post('/exams/{exam}/codes/generate', [\App\Http\Controllers\CbtAdmin\ExamCodeController::class, 'generate']);
+
+            // Role management (promote lecturers ↔ demote exam officers)
+            Route::get('/role-management', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'index']);
+            Route::get('/role-management/history', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'history']);
+            Route::post('/role-management/{user}/promote', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'promote']);
+            Route::post('/role-management/{user}/demote', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'demote']);
+
             // Phase 8/9 — Sync push/pull triggers + sync logs
         });
 
