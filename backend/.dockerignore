@@ -1,0 +1,38 @@
+# Files excluded from the Docker build context.
+# Keeps the context small and prevents secrets from entering the image.
+
+# Dependencies (rebuilt inside Docker by composer)
+/vendor/
+
+# Environment secrets — never copy into the image
+.env
+.env.local
+.env.*.local
+
+# Version control
+.git/
+.gitignore
+
+# Dev / CI tooling
+.editorconfig
+phpunit.xml
+phpunit.xml.dist
+phpstan.neon
+.phpstan/
+pint.json
+rector.php
+.github/
+
+# Test suite (not needed at runtime)
+/tests/
+
+# Generated storage files (these are mounted via Docker volume)
+/storage/framework/cache/
+/storage/framework/sessions/
+/storage/framework/views/
+/storage/logs/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp

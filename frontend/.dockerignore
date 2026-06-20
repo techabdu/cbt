@@ -1,0 +1,32 @@
+# Files excluded from the Docker build context.
+
+# Installed dependencies (reinstalled inside Docker)
+node_modules/
+
+# Previous build output
+.next/
+out/
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
+# Version control
+.git/
+.gitignore
+
+# Dev tooling
+.eslintrc*
+.prettierrc*
+.editorconfig
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp

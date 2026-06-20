@@ -1,32 +1,33 @@
-# ── Stage 1: Composer dependencies (no dev, pre-autoloaded) ─────────────────
-FROM composer:2 AS vendor
+# ── Stage 1: Install & autoload Composer dependencies ─────────────────────
+FROM composer:2 AS build
 
 WORKDIR /app
 
-COPY composer.json composer.lock ./
-RUN composer install \
-    --no-dev \
-    --no-scripts \
-    --no-interaction \
-    --optimize-autoloader \
-    --prefer-dist
-
+# Copy everything so scripts that reference app files work
 COPY . .
-RUN composer dump-autoload --no-dev --classmap-authoritative --optimize
 
-# ── Stage 2: Production PHP-FPM image ────────────────────────────────────────
+RUN composer install \
+        --no-dev \
+        --no-interaction \
+        --optimize-autoloader \
+        --classmap-authoritative \
+        --prefer-dist \
+    && composer dump-autoload \
+        --no-dev \
+        --classmap-authoritative \
+        --optimize
+
+# ── Stage 2: Production PHP-FPM runtime ────────────────────────────────────
 FROM php:8.3-fpm-alpine
 
-# System packages + PHP extensions required by Laravel 11
+# PHP extensions required by Laravel 11 + dompdf + maatwebsite/excel
 RUN apk add --no-cache \
-        git \
-        unzip \
-        curl \
         libzip-dev \
         icu-dev \
         freetype-dev \
         libjpeg-turbo-dev \
         libpng-dev \
+        libxml2-dev \
     && docker-php-ext-configure gd \
         --with-freetype \
         --with-jpeg \
@@ -38,6 +39,8 @@ RUN apk add --no-cache \
         gd \
         opcache \
         pcntl \
+        xml \
+        soap \
     && rm -rf /var/cache/apk/*
 
 # OPcache tuned for production
@@ -52,19 +55,19 @@ RUN { \
 
 WORKDIR /var/www/html
 
-# Copy application source + pre-built vendor from stage 1
-COPY --chown=www-data:www-data . .
-COPY --from=vendor --chown=www-data:www-data /app/vendor ./vendor
+# Copy fully-built application from stage 1
+COPY --from=build --chown=www-data:www-data /app .
 
-# Create writable directories and set correct permissions
-RUN mkdir -p storage/framework/{cache,sessions,views} \
-    && mkdir -p storage/logs \
-    && mkdir -p bootstrap/cache \
+# Ensure writable directories exist with correct ownership
+RUN mkdir -p \
+        storage/framework/cache/data \
+        storage/framework/sessions \
+        storage/framework/views \
+        storage/logs \
+        bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache \
-    && chmod -R 775 storage bootstrap/cache
-
-# Make entrypoint executable
-RUN chmod +x /var/www/html/docker-entrypoint.sh
+    && chmod -R 775 storage bootstrap/cache \
+    && chmod +x /var/www/html/docker-entrypoint.sh
 
 EXPOSE 9000
 
