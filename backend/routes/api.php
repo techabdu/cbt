@@ -59,6 +59,16 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         */
         Route::prefix('lecturer')->middleware('role:lecturer')->group(function (): void {
             // Phase 5 — Question banks & questions
+            Route::get('/courses', [\App\Http\Controllers\Lecturer\CourseController::class, 'index']);
+
+            Route::apiResource('question-banks', \App\Http\Controllers\Lecturer\QuestionBankController::class)
+                ->parameters(['question-banks' => 'questionBank']);
+            Route::post('/question-banks/{questionBank}/submit', [\App\Http\Controllers\Lecturer\QuestionBankController::class, 'submit']);
+
+            Route::apiResource('question-banks.questions', \App\Http\Controllers\Lecturer\QuestionController::class)
+                ->parameters(['question-banks' => 'questionBank'])
+                ->only(['store', 'update', 'destroy']);
+
             // Phase 9 — Results view & export
         });
 
