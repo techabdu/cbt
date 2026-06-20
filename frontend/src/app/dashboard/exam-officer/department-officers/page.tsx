@@ -260,12 +260,12 @@ function CreateOfficerDialog({
       onOpenChange(false);
       onCreated(res.user.file_number, res.temp_password);
     } catch (err) {
-      const axiosErr = err as AxiosError<{ errors?: Record<string, string[]> }>;
+      const axiosErr = err as AxiosError<{ message?: string; errors?: Record<string, string[]> }>;
       const fe = axiosErr.response?.data?.errors;
       if (fe?.file_number) setError("file_number", { message: fe.file_number[0] });
       else if (fe?.email) setError("email", { message: fe.email[0] });
       else if (fe?.department_id) setError("department_id", { message: fe.department_id[0] });
-      else toast.error("Could not create officer");
+      else toast.error(axiosErr.response?.data?.message ?? "Could not create officer");
     }
   };
 

@@ -5,8 +5,8 @@ import type { Student } from "@/types/student.types";
 export interface StudentPayload {
   matric_number: string;
   full_name: string;
-  department_id: number;
   level: string;
+  combination_id?: number | null;
   is_active?: boolean;
 }
 

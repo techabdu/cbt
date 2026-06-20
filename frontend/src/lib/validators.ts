@@ -116,8 +116,10 @@ export type LecturerInput = z.infer<typeof lecturerSchema>;
 export const studentSchema = z.object({
   matric_number: z.string().min(1, "Matric number is required").max(50),
   full_name:     z.string().min(1, "Full name is required").max(255),
-  department_id: z.string().min(1, "Department is required"),
   level:         z.string().min(1, "Level is required"),
+  // Optional — a student can be registered now and assigned to a combination
+  // later (individually here, or in bulk from the Combinations page).
+  combination_id: z.string().optional(),
 });
 
 export type StudentInput = z.infer<typeof studentSchema>;
