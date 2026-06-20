@@ -31,6 +31,10 @@ class StudentController extends Controller
                 )),
                 AllowedFilter::exact('department_id'),
                 AllowedFilter::exact('combination_id'),
+                // Students not yet tied to any combination — for the assignment picker.
+                AllowedFilter::callback('unassigned', fn ($q, $v) => filter_var($v, FILTER_VALIDATE_BOOLEAN)
+                    ? $q->whereNull('combination_id')
+                    : $q),
                 AllowedFilter::exact('level'),
                 AllowedFilter::exact('is_active')
             )
