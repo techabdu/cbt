@@ -8,9 +8,8 @@ import { toast } from "sonner";
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, ClipboardList } from "lucide-react";
 import type { AxiosError } from "axios";
 
-import { courseService, type CourseWithCounts, type CoursePayload } from "@/services/course.service";
-import { departmentService } from "@/services/department.service";
-import { courseSchema, type CourseInput } from "@/lib/validators";
+import { deptOfficerService, type CourseWithCounts, type DeptCoursePayload } from "@/services/deptOfficer.service";
+import { deptCourseSchema, type DeptCourseInput } from "@/lib/validators";
 import { LEVEL_LABELS, LEVEL_OPTIONS, SEMESTER_LABELS } from "@/lib/constants";
 import { useDebounce } from "@/hooks/useDebounce";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -27,50 +26,48 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { StudentLevel, Semester } from "@/types/common.types";
 
-export default function CoursesPage() {
+export default function DeptCoursesPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = React.useState(1);
   const [search, setSearch] = React.useState("");
+  const [levelFilter, setLevelFilter] = React.useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<CourseWithCounts | null>(null);
   const [deleting, setDeleting] = React.useState<CourseWithCounts | null>(null);
 
-  React.useEffect(() => setPage(1), [debouncedSearch]);
-
-  const { data: deptData } = useQuery({
-    queryKey: ["departments", "all"],
-    queryFn: () => departmentService.list({ per_page: 100 }),
-    staleTime: 60_000,
-  });
+  React.useEffect(() => setPage(1), [debouncedSearch, levelFilter]);
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["courses", page, debouncedSearch],
-    queryFn: () => courseService.list({ page, "filter[search]": debouncedSearch || undefined }),
+    queryKey: ["dept-courses", page, debouncedSearch, levelFilter],
+    queryFn: () => deptOfficerService.listCourses({
+      page,
+      "filter[search]": debouncedSearch || undefined,
+      "filter[level]": levelFilter || undefined,
+    }),
     placeholderData: keepPreviousData,
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => courseService.remove(id),
+    mutationFn: (id: number) => deptOfficerService.removeCourse(id),
     onSuccess: () => {
       toast.success("Course deleted");
       setDeleting(null);
-      queryClient.invalidateQueries({ queryKey: ["courses"] });
-      queryClient.invalidateQueries({ queryKey: ["exam-officer-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dept-courses"] });
+      queryClient.invalidateQueries({ queryKey: ["dept-officer-stats"] });
     },
     onError: (err: AxiosError<{ message?: string }>) => {
       toast.error(err.response?.data?.message ?? "Could not delete course");
     },
   });
 
-  const departments = deptData?.data ?? [];
   const courses = data?.data ?? [];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Courses"
-        description="Manage courses offered in your school."
+        description="Manage the courses offered by your department, per level and semester."
         action={
           <Button onClick={() => { setEditing(null); setFormOpen(true); }}>
             <Plus className="h-4 w-4" /> Add Course
@@ -79,14 +76,27 @@ export default function CoursesPage() {
       />
 
       <Card className="p-4">
-        <div className="relative mb-4 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input
-            placeholder="Search by title or code…"
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div className="relative max-w-sm flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search by title or code…"
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select
+            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950 min-w-40"
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value)}
+            aria-label="Filter by level"
+          >
+            <option value="">All Levels</option>
+            {LEVEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
         </div>
 
         {isLoading ? (
@@ -94,9 +104,9 @@ export default function CoursesPage() {
         ) : courses.length === 0 ? (
           <EmptyState
             icon={ClipboardList}
-            title={debouncedSearch ? `No courses match "${debouncedSearch}"` : "No courses yet"}
-            description={debouncedSearch ? "Try a different search." : "Create your first course to get started."}
-            action={!debouncedSearch && (
+            title={debouncedSearch || levelFilter ? "No courses match the filters" : "No courses yet"}
+            description={debouncedSearch || levelFilter ? "Try adjusting your filters." : "Create your first course to get started."}
+            action={!debouncedSearch && !levelFilter && (
               <Button onClick={() => { setEditing(null); setFormOpen(true); }}>
                 <Plus className="h-4 w-4" /> Add Course
               </Button>
@@ -153,14 +163,13 @@ export default function CoursesPage() {
         )}
       </Card>
 
-      <CourseFormDialog
+      <DeptCourseFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
         course={editing}
-        departments={departments}
         onSaved={() => {
-          queryClient.invalidateQueries({ queryKey: ["courses"] });
-          queryClient.invalidateQueries({ queryKey: ["exam-officer-stats"] });
+          queryClient.invalidateQueries({ queryKey: ["dept-courses"] });
+          queryClient.invalidateQueries({ queryKey: ["dept-officer-stats"] });
         }}
       />
 
@@ -178,45 +187,45 @@ export default function CoursesPage() {
   );
 }
 
-function CourseFormDialog({
-  open, onOpenChange, course, departments, onSaved,
+function DeptCourseFormDialog({
+  open, onOpenChange, course, onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   course: CourseWithCounts | null;
-  departments: { id: number; name: string; code: string }[];
   onSaved: () => void;
 }) {
   const isEdit = !!course;
 
   const { register, handleSubmit, reset, setError, formState: { errors, isSubmitting } } =
-    useForm<CourseInput>({ resolver: zodResolver(courseSchema) });
+    useForm<DeptCourseInput>({ resolver: zodResolver(deptCourseSchema) });
 
   React.useEffect(() => {
     if (open) {
       reset({
-        department_id: String(course?.department_id ?? ""),
-        title:         course?.title ?? "",
-        code:          course?.code ?? "",
-        credit_units:  String(course?.credit_units ?? "3"),
-        level:         course?.level ?? "",
-        semester:      course?.semester ?? "",
+        title:        course?.title ?? "",
+        code:         course?.code ?? "",
+        credit_units: String(course?.credit_units ?? "3"),
+        level:        course?.level ?? "",
+        semester:     course?.semester ?? "",
       });
     }
   }, [open, course, reset]);
 
-  const onSubmit = async (data: CourseInput) => {
-    const payload: CoursePayload = {
-      ...data,
-      department_id: Number(data.department_id),
-      credit_units:  Number(data.credit_units),
+  const onSubmit = async (data: DeptCourseInput) => {
+    const payload: DeptCoursePayload = {
+      title:        data.title,
+      code:         data.code,
+      level:        data.level,
+      semester:     data.semester,
+      credit_units: Number(data.credit_units),
     };
     try {
       if (isEdit) {
-        await courseService.update(course!.id, payload);
+        await deptOfficerService.updateCourse(course!.id, payload);
         toast.success("Course updated");
       } else {
-        await courseService.create(payload);
+        await deptOfficerService.createCourse(payload);
         toast.success("Course created");
       }
       onSaved();
@@ -225,7 +234,6 @@ function CourseFormDialog({
       const axiosErr = err as AxiosError<{ errors?: Record<string, string[]> }>;
       const fe = axiosErr.response?.data?.errors;
       if (fe?.code) setError("code", { message: fe.code[0] });
-      else if (fe?.department_id) setError("department_id", { message: fe.department_id[0] });
       else toast.error("Could not save course");
     }
   };
@@ -236,24 +244,10 @@ function CourseFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Course" : "Add Course"}</DialogTitle>
           <DialogDescription>
-            {isEdit ? "Update course details." : "Create a new course for your school."}
+            {isEdit ? "Update course details." : "Create a new course in your department."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="crs_dept">Department <span className="text-red-500">*</span></Label>
-            <select
-              id="crs_dept"
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-              {...register("department_id")}
-            >
-              <option value="">Select department…</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
-              ))}
-            </select>
-            {errors.department_id && <p className="text-sm text-red-600">! {errors.department_id.message}</p>}
-          </div>
           <div className="space-y-1.5">
             <Label htmlFor="crs_title">Title <span className="text-red-500">*</span></Label>
             <Input id="crs_title" placeholder="e.g. Introduction to Computing" {...register("title")} />

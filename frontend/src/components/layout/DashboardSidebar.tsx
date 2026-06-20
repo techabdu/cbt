@@ -16,12 +16,18 @@ import {
   FileText,
   CheckSquare,
   BarChart3,
+  CalendarDays,
+  Layers,
+  Eye,
+  UserCog,
+  Activity,
   X,
 } from "lucide-react";
 
 import { useAuth } from "@/providers/AuthProvider";
 import { authService } from "@/services/auth.service";
 import { cn } from "@/lib/utils";
+import { ROLE_HOME } from "@/lib/constants";
 import type { Role } from "@/types/common.types";
 
 interface NavItem {
@@ -40,16 +46,26 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
     { label: "Overview",       href: "/dashboard/lecturer",                   icon: LayoutDashboard },
     { label: "Question Banks", href: "/dashboard/lecturer/question-banks",    icon: BookOpen },
     { label: "My Courses",     href: "/dashboard/lecturer/courses",           icon: ClipboardList },
+    { label: "Students",       href: "/dashboard/lecturer/students",          icon: GraduationCap },
     { label: "Results",        href: "/dashboard/lecturer/results",           icon: BarChart3 },
   ],
+  department_exam_officer: [
+    { label: "Overview",          href: "/dashboard/department-officer",                   icon: LayoutDashboard },
+    { label: "Courses",           href: "/dashboard/department-officer/courses",           icon: ClipboardList },
+    { label: "Lecturers",         href: "/dashboard/department-officer/lecturers",          icon: Users },
+    { label: "Assignments",       href: "/dashboard/department-officer/assignments",        icon: FileText },
+    { label: "Students",          href: "/dashboard/department-officer/students",           icon: GraduationCap },
+    { label: "Lecturer Activity", href: "/dashboard/department-officer/lecturer-activity",  icon: Activity },
+  ],
   exam_officer: [
-    { label: "Overview",       href: "/dashboard/exam-officer",               icon: LayoutDashboard },
-    { label: "Lecturers",      href: "/dashboard/exam-officer/lecturers",     icon: Users },
-    { label: "Students",       href: "/dashboard/exam-officer/students",      icon: GraduationCap },
-    { label: "Courses",        href: "/dashboard/exam-officer/courses",       icon: ClipboardList },
-    { label: "Departments",    href: "/dashboard/exam-officer/departments",   icon: Building2 },
-    { label: "Assignments",    href: "/dashboard/exam-officer/assignments",   icon: FileText },
-    { label: "Moderation",     href: "/dashboard/exam-officer/moderation",   icon: CheckSquare },
+    { label: "Overview",            href: "/dashboard/exam-officer",                      icon: LayoutDashboard },
+    { label: "Departments",         href: "/dashboard/exam-officer/departments",          icon: Building2 },
+    { label: "Combinations",        href: "/dashboard/exam-officer/combinations",         icon: Layers },
+    { label: "Students",            href: "/dashboard/exam-officer/students",             icon: GraduationCap },
+    { label: "Department Officers", href: "/dashboard/exam-officer/department-officers",  icon: UserCog },
+    { label: "Academic Calendar",   href: "/dashboard/exam-officer/academic-calendar",    icon: CalendarDays },
+    { label: "Oversight",           href: "/dashboard/exam-officer/oversight",            icon: Eye },
+    { label: "Moderation",          href: "/dashboard/exam-officer/moderation",           icon: CheckSquare },
   ],
   cbt_admin: [
     { label: "Overview",       href: "/dashboard/cbt-admin",                  icon: LayoutDashboard },
@@ -85,6 +101,7 @@ export function DashboardSidebar({ open = false, onClose }: DashboardSidebarProp
   if (!user) return null;
 
   const navItems = NAV_ITEMS[user.role] ?? [];
+  const home = ROLE_HOME[user.role];
 
   const sidebarContent = (
     <aside className="flex h-full w-60 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
@@ -107,7 +124,7 @@ export function DashboardSidebar({ open = false, onClose }: DashboardSidebarProp
         <ul className="space-y-1">
           {navItems.map((item) => {
             const isActive =
-              item.href === `/dashboard/${user.role.replace("_", "-")}`
+              item.href === home
                 ? pathname === item.href
                 : pathname.startsWith(item.href);
 

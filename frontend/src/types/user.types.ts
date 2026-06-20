@@ -31,8 +31,11 @@ export interface StaffUser {
   name: string;
   email: string | null;
   role: Role;
+  role_label?: string;
   school_id: number | null;
   school?: School | null;
+  department_id: number | null;
+  department?: Department | null;
   is_active: boolean;
   last_login_at: string | null;
 }

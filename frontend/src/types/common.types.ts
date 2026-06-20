@@ -1,4 +1,9 @@
-export type Role = "super_admin" | "cbt_admin" | "exam_officer" | "lecturer";
+export type Role =
+  | "super_admin"
+  | "cbt_admin"
+  | "exam_officer"
+  | "department_exam_officer"
+  | "lecturer";
 
 export type StudentLevel =
   | "NCE_100"

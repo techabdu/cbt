@@ -51,13 +51,51 @@ export const cbtAdminSchema = z.object({
 export type CbtAdminInput = z.infer<typeof cbtAdminSchema>;
 
 export const examOfficerSchema = z.object({
-  file_number: z.string().min(1, "File number is required").max(50),
-  name:        z.string().min(1, "Name is required").max(255),
-  email:       z.string().email("Enter a valid email").max(255).or(z.literal("")),
-  school_id:   z.string().min(1, "School is required"),
+  file_number:   z.string().min(1, "File number is required").max(50),
+  name:          z.string().min(1, "Name is required").max(255),
+  email:         z.string().email("Enter a valid email").max(255).or(z.literal("")),
+  school_id:     z.string().min(1, "School is required"),
+  // Optional — the officer may be attached to a department now or later.
+  department_id: z.string().optional(),
 });
 
 export type ExamOfficerInput = z.infer<typeof examOfficerSchema>;
+
+export const combinationSchema = z.object({
+  name:           z.string().min(1, "Name is required").max(255),
+  code:           z.string().min(1, "Code is required").max(30),
+  department_ids: z.array(z.string()).min(2, "Select at least two departments"),
+});
+
+export type CombinationInput = z.infer<typeof combinationSchema>;
+
+export const academicSessionSchema = z.object({
+  session: z
+    .string()
+    .regex(/^\d{4}\/\d{4}$/, "Use the format YYYY/YYYY, e.g. 2024/2025"),
+});
+
+export type AcademicSessionInput = z.infer<typeof academicSessionSchema>;
+
+export const departmentOfficerSchema = z.object({
+  file_number:   z.string().min(1, "File number is required").max(50),
+  name:          z.string().min(1, "Name is required").max(255),
+  email:         z.string().email("Enter a valid email").max(255).or(z.literal("")),
+  department_id: z.string().min(1, "Department is required"),
+});
+
+export type DepartmentOfficerInput = z.infer<typeof departmentOfficerSchema>;
+
+/** Course managed by a Department Exam Officer — department is implicit. */
+export const deptCourseSchema = z.object({
+  title:        z.string().min(1, "Title is required").max(255),
+  code:         z.string().min(1, "Code is required").max(20),
+  credit_units: z.string().min(1, "Credit units is required"),
+  level:        z.string().min(1, "Level is required"),
+  semester:     z.string().min(1, "Semester is required"),
+});
+
+export type DeptCourseInput = z.infer<typeof deptCourseSchema>;
 
 export const departmentSchema = z.object({
   name:      z.string().min(1, "Name is required").max(255),

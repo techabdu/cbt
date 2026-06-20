@@ -6,12 +6,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import {
-  Plus, Search, MoreHorizontal, Pencil, KeyRound, UserX, Loader2, Users,
-} from "lucide-react";
+import { Plus, Search, MoreHorizontal, Pencil, KeyRound, UserX, Loader2, Users } from "lucide-react";
 import type { AxiosError } from "axios";
 
-import { lecturerService } from "@/services/lecturer.service";
+import { deptOfficerService } from "@/services/deptOfficer.service";
 import { lecturerSchema, type LecturerInput } from "@/lib/validators";
 import { useDebounce } from "@/hooks/useDebounce";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -30,7 +28,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { StaffUser } from "@/types/user.types";
 
-export default function LecturersPage() {
+export default function DeptLecturersPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = React.useState(1);
   const [search, setSearch] = React.useState("");
@@ -44,24 +42,24 @@ export default function LecturersPage() {
   React.useEffect(() => setPage(1), [debouncedSearch]);
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["lecturers", page, debouncedSearch],
-    queryFn: () => lecturerService.list({ page, "filter[search]": debouncedSearch || undefined }),
+    queryKey: ["dept-lecturers", page, debouncedSearch],
+    queryFn: () => deptOfficerService.listLecturers({ page, "filter[search]": debouncedSearch || undefined }),
     placeholderData: keepPreviousData,
   });
 
   const deactivateMutation = useMutation({
-    mutationFn: (id: number) => lecturerService.deactivate(id),
+    mutationFn: (id: number) => deptOfficerService.deactivateLecturer(id),
     onSuccess: () => {
       toast.success("Lecturer deactivated");
       setDeactivating(null);
-      queryClient.invalidateQueries({ queryKey: ["lecturers"] });
-      queryClient.invalidateQueries({ queryKey: ["exam-officer-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dept-lecturers"] });
+      queryClient.invalidateQueries({ queryKey: ["dept-officer-stats"] });
     },
     onError: () => toast.error("Could not deactivate lecturer"),
   });
 
   const resetMutation = useMutation({
-    mutationFn: (id: number) => lecturerService.resetPassword(id),
+    mutationFn: (id: number) => deptOfficerService.resetLecturerPassword(id),
     onSuccess: (res, id) => {
       const lecturer = data?.data.find((l) => l.id === id);
       setResetting(null);
@@ -76,7 +74,7 @@ export default function LecturersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Lecturers"
-        description="Manage lecturers attached to your school."
+        description="Manage lecturers attached to your department."
         action={
           <Button onClick={() => { setEditing(null); setFormOpen(true); }}>
             <Plus className="h-4 w-4" /> Add Lecturer
@@ -165,14 +163,14 @@ export default function LecturersPage() {
         )}
       </Card>
 
-      <LecturerFormDialog
+      <DeptLecturerFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
         lecturer={editing}
         onCreated={(fileNumber, password) => setTempPassword({ fileNumber, password })}
         onSaved={() => {
-          queryClient.invalidateQueries({ queryKey: ["lecturers"] });
-          queryClient.invalidateQueries({ queryKey: ["exam-officer-stats"] });
+          queryClient.invalidateQueries({ queryKey: ["dept-lecturers"] });
+          queryClient.invalidateQueries({ queryKey: ["dept-officer-stats"] });
         }}
       />
 
@@ -207,7 +205,7 @@ export default function LecturersPage() {
   );
 }
 
-function LecturerFormDialog({
+function DeptLecturerFormDialog({
   open, onOpenChange, lecturer, onCreated, onSaved,
 }: {
   open: boolean;
@@ -228,12 +226,12 @@ function LecturerFormDialog({
   const onSubmit = async (data: LecturerInput) => {
     try {
       if (isEdit) {
-        await lecturerService.update(lecturer!.id, data);
+        await deptOfficerService.updateLecturer(lecturer!.id, data);
         toast.success("Lecturer updated");
         onSaved();
         onOpenChange(false);
       } else {
-        const res = await lecturerService.create(data);
+        const res = await deptOfficerService.createLecturer(data);
         onSaved();
         onOpenChange(false);
         onCreated(res.user.file_number, res.temp_password);
@@ -253,7 +251,7 @@ function LecturerFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Lecturer" : "Add Lecturer"}</DialogTitle>
           <DialogDescription>
-            {isEdit ? "Update lecturer details." : "Create a new lecturer account. A temporary password will be generated."}
+            {isEdit ? "Update lecturer details." : "Create a new lecturer account in your department. A temporary password will be generated."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
