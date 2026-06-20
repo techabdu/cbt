@@ -43,19 +43,51 @@ The two are distinguished only by their `.env` (`IS_OFFLINE_SERVER`).
 
 ```
 .
-├── backend/    # Laravel 11 API
-└── frontend/   # Next.js 16 app (staff dashboards + student exam UI)
+├── backend/      # Laravel API (Dockerfile + docker/start.sh for Compose)
+├── frontend/     # Next.js app (staff dashboards + student exam UI; Dockerfile)
+└── compose.yaml  # one-command local stack (frontend + backend + MySQL)
 ```
 
 ## Getting Started
 
-### Prerequisites
+Two ways to run the whole stack locally. **Docker is the easy path** — one
+command, nothing to install but Docker. Use the manual path if you'd rather run
+live-reloading dev servers while you work on the code. Either way, open
+**http://localhost:3000** and sign in as the seeded Super Admin (file number
+`ADMIN/0001`, password `password` — you'll be forced to change it on first login).
 
-- PHP 8.2+ and Composer
+### Option A — Docker (recommended)
+
+Needs only [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+(Docker Engine + Compose). From the repo root:
+
+```bash
+docker compose up --build
+```
+
+This builds the frontend, backend, and a MySQL 8 database, applies the
+migrations, and seeds the bootstrap data (system settings, college, and the
+Super Admin account) on the first run. Once the Laravel and Next.js servers
+report ready, open http://localhost:3000.
+
+```bash
+docker compose down       # stop (your data is kept)
+docker compose down -v    # stop and wipe the DB + uploads (re-seeds next time)
+```
+
+The stack runs as the **online** server (`IS_OFFLINE_SERVER=false`). All
+settings live in `compose.yaml`; it ships a demo `APP_KEY` and a development
+`SYNC_SECRET_KEY` — change both before deploying anywhere real.
+
+### Option B — Manual (PHP + Node + MySQL)
+
+**Prerequisites**
+
+- PHP 8.3+ (8.4 recommended) and Composer
 - Node.js 20+ and npm
 - MySQL 8 (SQLite also works for local development)
 
-### Backend
+**Backend** (Laravel API → http://localhost:8000):
 
 ```bash
 cd backend
@@ -70,12 +102,12 @@ The seeded Super Admin credentials default to file number `ADMIN/0001` /
 password `password` (override via `SUPER_ADMIN_*` env vars). The account is
 forced to change its password on first login.
 
-### Frontend
+**Frontend** (Next.js → http://localhost:3000) — in a second terminal:
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local     # set NEXT_PUBLIC_API_URL
+cp .env.example .env.local     # sets NEXT_PUBLIC_API_URL=http://localhost:8000/api
 npm run dev                    # http://localhost:3000
 ```
 

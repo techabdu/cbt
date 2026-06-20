@@ -1,44 +1,21 @@
-# ── Stage 1: Install npm dependencies ─────────────────────────────────────
-FROM node:20-alpine AS deps
+# Local Next.js container (used by Docker Compose).
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
+# Install dependencies first for better layer caching.
 COPY package.json package-lock.json ./
-# Use ci for reproducible installs; include devDependencies (needed for build)
 RUN npm ci
 
-# ── Stage 2: Build Next.js for production ─────────────────────────────────
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-# API base URL is baked into the client bundle at build time.
-# Must be reachable from the end-user's browser, not from inside Docker.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-COPY --from=deps /app/node_modules ./node_modules
+# Build the app. NEXT_PUBLIC_* values are inlined at build time, so the API URL
+# the browser will call must be provided here. The CBT frontend expects the
+# /api suffix on this value (see src/lib/api.ts). Defaults to the Compose-mapped
+# backend on the host.
 COPY . .
-
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# ── Stage 3: Minimal production runner ────────────────────────────────────
-FROM node:20-alpine AS runner
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Only ship what `next start` needs
-COPY --from=builder /app/public        ./public
-COPY --from=builder /app/.next         ./.next
-COPY --from=builder /app/node_modules  ./node_modules
-COPY --from=builder /app/package.json  ./package.json
-COPY --from=builder /app/next.config.ts ./next.config.ts
-
 EXPOSE 3000
-
-CMD ["npx", "next", "start", "-p", "3000"]
+CMD ["npm", "run", "start"]
