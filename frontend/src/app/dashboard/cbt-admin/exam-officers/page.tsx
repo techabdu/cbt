@@ -246,8 +246,17 @@ function ExamOfficerFormDialog({
     handleSubmit,
     reset,
     setError,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ExamOfficerInput>({ resolver: zodResolver(examOfficerSchema) });
+
+  const selectedSchoolId = watch("school_id");
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ["cbt-admin-departments", selectedSchoolId],
+    queryFn: () => examOfficerAdminService.departments(Number(selectedSchoolId)),
+    enabled: !!selectedSchoolId,
+  });
 
   React.useEffect(() => {
     if (open) {
@@ -256,6 +265,7 @@ function ExamOfficerFormDialog({
         name: officer?.name ?? "",
         email: officer?.email ?? "",
         school_id: officer?.school_id ? String(officer.school_id) : "",
+        department_id: officer?.department_id ? String(officer.department_id) : "",
       });
     }
   }, [open, officer, reset]);
@@ -267,6 +277,7 @@ function ExamOfficerFormDialog({
           name: data.name,
           email: data.email || null,
           is_active: officer!.is_active,
+          department_id: data.department_id ? Number(data.department_id) : null,
         });
         toast.success("Exam Officer updated");
         queryClient.invalidateQueries({ queryKey: ["exam-officers"] });
@@ -277,6 +288,7 @@ function ExamOfficerFormDialog({
           name: data.name,
           email: data.email || null,
           school_id: Number(data.school_id),
+          department_id: data.department_id ? Number(data.department_id) : null,
         };
         const res = await examOfficerAdminService.create(payload);
         queryClient.invalidateQueries({ queryKey: ["exam-officers"] });
@@ -333,6 +345,22 @@ function ExamOfficerFormDialog({
               <p className="text-sm text-amber-600">No schools exist yet — ask a Super Admin to create one first.</p>
             )}
             {errors.school_id && <p className="text-sm text-red-600">! {errors.school_id.message}</p>}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="eo_dept">Department <span className="text-slate-400 text-xs">(optional)</span></Label>
+            <select
+              id="eo_dept"
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950"
+              disabled={!selectedSchoolId}
+              {...register("department_id")}
+            >
+              <option value="">Not attached to a department</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400">Optionally tie this officer to a department now; you can change it later.</p>
+            {errors.department_id && <p className="text-sm text-red-600">! {errors.department_id.message}</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="eo_email">Email</Label>
