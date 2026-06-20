@@ -1,8 +1,4 @@
-services:
-  backend:
-    build: .
-    container_name: cbt_backend
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./:/var/www/html
+# This file is kept for reference only.
+# Use the root-level docker-compose.yml for the full stack:
+#   cd ..
+#   docker compose --env-file .env.docker.local up --build
