@@ -70,6 +70,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
                 ->only(['store', 'update', 'destroy']);
 
             // Phase 9 — Results view & export
+            Route::get('/results', [\App\Http\Controllers\Lecturer\ResultController::class, 'index']);
+            Route::get('/results/{exam}', [\App\Http\Controllers\Lecturer\ResultController::class, 'show']);
+            Route::get('/results/{exam}/export/pdf', [\App\Http\Controllers\Lecturer\ResultController::class, 'exportPdf']);
+            Route::get('/results/{exam}/export/excel', [\App\Http\Controllers\Lecturer\ResultController::class, 'exportExcel']);
         });
 
         /*
@@ -134,8 +138,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
             Route::post('/role-management/{user}/promote', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'promote']);
             Route::post('/role-management/{user}/demote', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'demote']);
 
-            // Phase 8 — Sync push to offline + sync activity log
+            // Phase 8+9 — Sync push/pull + sync activity log
             Route::post('/exams/{exam}/sync', [\App\Http\Controllers\CbtAdmin\SyncController::class, 'push']);
+            Route::post('/exams/{exam}/pull-results', [\App\Http\Controllers\CbtAdmin\SyncController::class, 'pull']);
             Route::get('/sync-logs', [\App\Http\Controllers\CbtAdmin\SyncController::class, 'logs']);
         });
 

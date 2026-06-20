@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import {
   ArrowLeft, KeyRound, Loader2, AlertCircle, Search, Users, CheckCircle2,
-  Calendar, Clock, Timer, BookOpen, UploadCloud,
+  Calendar, Clock, Timer, BookOpen, UploadCloud, DownloadCloud,
 } from "lucide-react";
 import type { AxiosError } from "axios";
 
@@ -76,6 +76,17 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
       toast.error(err.response?.data?.message ?? "Sync failed — could not reach the offline server."),
   });
 
+  const pullMutation = useMutation({
+    mutationFn: () => cbtExamService.pullResults(examId),
+    onSuccess: (res) => {
+      toast.success(res.message ?? "Results pulled successfully.");
+      queryClient.invalidateQueries({ queryKey: ["exam", examId] });
+      queryClient.invalidateQueries({ queryKey: ["exams"] });
+    },
+    onError: (err: AxiosError<{ message?: string }>) =>
+      toast.error(err.response?.data?.message ?? "Pull failed — could not reach the offline server."),
+  });
+
   if (isLoading) {
     return <div className="space-y-6"><Skeleton className="h-6 w-48" /><Skeleton className="h-32 w-full" /><Skeleton className="h-40 w-full" /></div>;
   }
@@ -97,6 +108,7 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
   const eligible = exam.eligible_count ?? 0;
   const allGenerated = eligible > 0 && codesTotal >= eligible;
   const canSync = (exam.status === "scheduled" || exam.status === "synced") && codesTotal > 0;
+  const canPull = ["synced", "ongoing", "completed", "results_synced"].includes(exam.status);
 
   return (
     <div className="space-y-6">
@@ -108,9 +120,13 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
         action={
           <div className="flex items-center gap-3">
             <Badge variant={status.variant}>{status.label}</Badge>
-            <Button onClick={() => syncMutation.mutate()} disabled={!canSync || syncMutation.isPending} variant={exam.status === "synced" ? "outline" : "default"}>
+            <Button onClick={() => syncMutation.mutate()} disabled={!canSync || syncMutation.isPending} variant="outline">
               {syncMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-              {exam.status === "synced" ? "Re-sync to Offline" : "Sync to Offline"}
+              {exam.status === "synced" ? "Re-sync" : "Sync to Offline"}
+            </Button>
+            <Button onClick={() => pullMutation.mutate()} disabled={!canPull || pullMutation.isPending}>
+              {pullMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <DownloadCloud className="h-4 w-4" />}
+              Pull Results
             </Button>
           </div>
         }
@@ -120,6 +136,14 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
         <Card className="border-purple-200 bg-purple-50 dark:border-purple-900 dark:bg-purple-950/30">
           <CardContent className="flex items-center gap-3 py-3 text-sm text-purple-700 dark:text-purple-300">
             <CheckCircle2 className="h-4 w-4 shrink-0" /> This exam has been synced to the offline server and is ready for students.
+          </CardContent>
+        </Card>
+      )}
+
+      {exam.status === "results_synced" && (
+        <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
+          <CardContent className="flex items-center gap-3 py-3 text-sm text-green-700 dark:text-green-300">
+            <CheckCircle2 className="h-4 w-4 shrink-0" /> Results have been pulled from the offline server. Lecturers can now view and download them.
           </CardContent>
         </Card>
       )}

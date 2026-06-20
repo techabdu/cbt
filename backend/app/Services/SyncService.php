@@ -9,10 +9,16 @@ use App\Models\College;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\Exam;
+use App\Models\ExamResult;
+use App\Models\ExamSession;
+use App\Models\LecturerCourse;
 use App\Models\School;
 use App\Models\Student;
+use App\Models\StudentAnswer;
 use App\Models\SyncLog;
 use App\Models\User;
+use App\Notifications\ExamResultsAvailable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 class SyncService
@@ -59,6 +65,118 @@ class SyncService
 
             $this->auditLog->log('exam_synced_to_offline', $actor, Exam::class, $exam->id,
                 newValues: $log->payload_summary, ipAddress: $ip);
+        } catch (\Throwable $e) {
+            $log->update([
+                'status'        => SyncStatus::Failed,
+                'error_message' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+
+        return $log;
+    }
+
+    /**
+     * Pull exam_sessions, student_answers and exam_results from the offline
+     * server, upsert them on the online server, mark the exam results_synced,
+     * and fire notifications to all lecturers of the course.
+     */
+    public function pullFromOffline(Exam $exam, User $actor, ?string $ip = null): SyncLog
+    {
+        $baseUrl = rtrim((string) config('cbt.offline_server_url'), '/');
+        $url     = $baseUrl.'/api/sync/results/'.$exam->id;
+
+        $log = SyncLog::create([
+            'exam_id'           => $exam->id,
+            'direction'         => SyncDirection::Pull,
+            'status'            => SyncStatus::Pending,
+            'initiated_by'      => $actor->id,
+            'target_server_url' => $url,
+            'payload_summary'   => null,
+        ]);
+
+        try {
+            $response = Http::withHeaders(['X-Sync-Secret' => (string) config('cbt.sync_secret_key')])
+                ->timeout((int) config('cbt.sync_timeout', 30))
+                ->acceptJson()
+                ->get($url);
+
+            $response->throw();
+
+            $body = $response->json();
+
+            DB::transaction(function () use ($body, $exam): void {
+                $now = now()->toDateTimeString();
+
+                foreach ($body['sessions'] ?? [] as $s) {
+                    $sessionId = $s['id'];
+                    ExamSession::upsert([[
+                        'id'               => $sessionId,
+                        'exam_id'          => $s['exam_id'],
+                        'student_id'       => $s['student_id'],
+                        'started_at'       => $s['started_at'],
+                        'submitted_at'     => $s['submitted_at'],
+                        'is_auto_submitted' => $s['is_auto_submitted'] ? 1 : 0,
+                        'synced_at'        => $now,
+                        'created_at'       => $now,
+                        'updated_at'       => $now,
+                    ]], ['id'], ['submitted_at', 'is_auto_submitted', 'synced_at', 'updated_at']);
+
+                    foreach ($s['answers'] ?? [] as $a) {
+                        StudentAnswer::upsert([[
+                            'id'              => $a['id'],
+                            'exam_session_id' => $a['exam_session_id'],
+                            'question_id'     => $a['question_id'],
+                            'student_answer'  => $a['student_answer'],
+                            'is_correct'      => $a['is_correct'] ? 1 : 0,
+                            'marks_earned'    => $a['marks_earned'],
+                            'order_index'     => $a['order_index'],
+                            'created_at'      => $now,
+                            'updated_at'      => $now,
+                        ]], ['id'], ['student_answer', 'is_correct', 'marks_earned', 'updated_at']);
+                    }
+                }
+
+                foreach ($body['results'] ?? [] as $r) {
+                    ExamResult::upsert([[
+                        'id'          => $r['id'],
+                        'exam_id'     => $r['exam_id'],
+                        'student_id'  => $r['student_id'],
+                        'total_score' => $r['total_score'],
+                        'total_marks' => $r['total_marks'],
+                        'percentage'  => $r['percentage'],
+                        'grade'       => $r['grade'],
+                        'is_absent'   => $r['is_absent'] ? 1 : 0,
+                        'synced_at'   => $now,
+                        'created_at'  => $now,
+                        'updated_at'  => $now,
+                    ]], ['id'], ['total_score', 'total_marks', 'percentage', 'grade', 'synced_at', 'updated_at']);
+                }
+
+                $exam->update(['status' => ExamStatus::ResultsSynced]);
+            });
+
+            $sessionCount = count($body['sessions'] ?? []);
+            $resultCount  = count($body['results'] ?? []);
+
+            $log->update([
+                'status'          => SyncStatus::Success,
+                'synced_at'       => now(),
+                'payload_summary' => ['sessions' => $sessionCount, 'results' => $resultCount],
+            ]);
+
+            $this->auditLog->log('results_pulled_from_offline', $actor, Exam::class, $exam->id,
+                newValues: ['sessions' => $sessionCount, 'results' => $resultCount], ipAddress: $ip);
+
+            // Notify all lecturers assigned to this course
+            $exam->loadMissing('course');
+            if ($exam->course_id) {
+                $lecturerIds = LecturerCourse::where('course_id', $exam->course_id)->pluck('lecturer_id');
+                User::whereIn('id', $lecturerIds)->each(
+                    fn (User $u) => $u->notify(new ExamResultsAvailable($exam))
+                );
+            }
         } catch (\Throwable $e) {
             $log->update([
                 'status'        => SyncStatus::Failed,

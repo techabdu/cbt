@@ -58,6 +58,39 @@ class SyncController extends Controller
     }
 
     /**
+     * Pull exam results from the offline server.
+     */
+    public function pull(Request $request, Exam $exam): JsonResponse
+    {
+        if (! config('cbt.offline_server_url')) {
+            return response()->json([
+                'message' => 'No offline server URL is configured. Set OFFLINE_SERVER_URL first.',
+            ], 422);
+        }
+
+        if (! in_array($exam->status, [ExamStatus::Synced, ExamStatus::Ongoing, ExamStatus::Completed, ExamStatus::ResultsSynced], true)) {
+            return response()->json([
+                'message' => 'Exam must be synced to the offline server before results can be pulled.',
+            ], 422);
+        }
+
+        try {
+            $log = $this->sync->pullFromOffline($exam, $request->user(), $request->ip());
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Pull failed: could not reach the offline server.',
+                'error'   => $e->getMessage(),
+            ], 502);
+        }
+
+        return response()->json([
+            'message' => 'Results pulled from the offline server.',
+            'log'     => new SyncLogResource($log),
+            'exam'    => new ExamResource($exam->fresh()->load('course')),
+        ]);
+    }
+
+    /**
      * Sync activity log.
      */
     public function logs(Request $request): JsonResponse

@@ -24,5 +24,5 @@ Route::prefix('sync')->middleware('sync.secret')->group(function (): void {
     Route::post('/receive-exam', [\App\Http\Controllers\Sync\PushReceiveController::class, 'store']);
 
     // Phase 9 — Online pulls results from offline
-    // Route::get('/results/{exam}', [\App\Http\Controllers\Sync\ResultsPullController::class, 'show']);
+    Route::get('/results/{exam}', [\App\Http\Controllers\Sync\ResultsPullController::class, 'show']);
 });

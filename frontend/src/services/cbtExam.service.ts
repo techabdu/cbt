@@ -59,6 +59,9 @@ export const cbtExamService = {
   sync: (examId: number): Promise<{ message: string; exam: { data: Exam } }> =>
     api.post(`/cbt-admin/exams/${examId}/sync`).then((r) => r.data),
 
+  pullResults: (examId: number): Promise<{ message: string; exam: Exam }> =>
+    api.post(`/cbt-admin/exams/${examId}/pull-results`).then((r) => r.data),
+
   syncLogs: (params?: Record<string, string | number | undefined>): Promise<Paginated<import("@/types/sync.types").SyncLog>> =>
     api.get("/cbt-admin/sync-logs", { params }).then((r) => r.data),
 };
