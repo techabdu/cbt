@@ -121,6 +121,16 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
             // Phase 7 — Exams, code generation, role management
             Route::get('/stats', [\App\Http\Controllers\CbtAdmin\DashboardController::class, 'stats']);
 
+            // School Exam Officer accounts — create directly and assign to a school
+            // (fills the onboarding bootstrap: a brand-new school has no staff yet,
+            // so there is no lecturer to promote). Schools are read-only here, for
+            // the assign-to-school picker.
+            Route::get('/schools', [\App\Http\Controllers\CbtAdmin\SchoolController::class, 'index']);
+            Route::apiResource('exam-officers', \App\Http\Controllers\CbtAdmin\ExamOfficerController::class)
+                ->parameters(['exam-officers' => 'exam_officer'])
+                ->except(['show']);
+            Route::post('/exam-officers/{exam_officer}/reset-password', [\App\Http\Controllers\CbtAdmin\ExamOfficerController::class, 'resetPassword']);
+
             // Approved question banks (read-only) to build exams from
             Route::get('/question-banks', [\App\Http\Controllers\CbtAdmin\QuestionBankController::class, 'index']);
             Route::get('/question-banks/{questionBank}', [\App\Http\Controllers\CbtAdmin\QuestionBankController::class, 'show']);

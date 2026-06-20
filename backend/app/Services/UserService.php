@@ -101,6 +101,58 @@ class UserService
     }
 
     /**
+     * Create a School Exam Officer scoped to a school. Returns the user plus the
+     * plain temp password so the caller can surface it once to the CBT Admin.
+     *
+     * @return array{0: User, 1: string}
+     */
+    public function createExamOfficer(array $data, ?User $actor, ?string $ip = null): array
+    {
+        $tempPassword = $this->generateTempPassword();
+
+        $user = User::create([
+            'file_number'           => $data['file_number'],
+            'name'                  => $data['name'],
+            'email'                 => $data['email'] ?? null,
+            'password'              => $tempPassword,
+            'role'                  => UserRole::ExamOfficer,
+            'school_id'             => $data['school_id'],
+            'is_active'             => true,
+            'force_password_change' => true,
+        ]);
+
+        $this->auditLog->log('exam_officer_created', $actor, User::class, $user->id, newValues: [
+            'file_number' => $user->file_number,
+            'name'        => $user->name,
+            'school_id'   => $user->school_id,
+        ], ipAddress: $ip);
+
+        return [$user, $tempPassword];
+    }
+
+    /**
+     * Update a School Exam Officer's profile / active status.
+     */
+    public function updateExamOfficer(User $user, array $data, ?User $actor, ?string $ip = null): User
+    {
+        $original = $user->only(['name', 'email', 'is_active']);
+
+        $user->update([
+            'name'      => $data['name'],
+            'email'     => $data['email'] ?? null,
+            'is_active' => $data['is_active'],
+        ]);
+
+        $this->auditLog->log('exam_officer_updated', $actor, User::class, $user->id,
+            oldValues: $original,
+            newValues: $user->only(['name', 'email', 'is_active']),
+            ipAddress: $ip,
+        );
+
+        return $user;
+    }
+
+    /**
      * Reset a user's password to a fresh temp password and force a change.
      *
      * @return string the plain temp password
