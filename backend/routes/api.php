@@ -134,7 +134,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
             Route::post('/role-management/{user}/promote', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'promote']);
             Route::post('/role-management/{user}/demote', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'demote']);
 
-            // Phase 8/9 — Sync push/pull triggers + sync logs
+            // Phase 8 — Sync push to offline + sync activity log
+            Route::post('/exams/{exam}/sync', [\App\Http\Controllers\CbtAdmin\SyncController::class, 'push']);
+            Route::get('/sync-logs', [\App\Http\Controllers\CbtAdmin\SyncController::class, 'logs']);
         });
 
         /*
@@ -167,5 +169,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
 |--------------------------------------------------------------------------
 */
 Route::prefix('student/exam')->middleware('offline.mode')->group(function (): void {
-    // Phase 8 — Student login (matric + exam code), start, answer autosave, submit
+    // Phase 8 — Student login (matric + exam code), then token-authenticated flow
+    Route::post('/login', [\App\Http\Controllers\Student\ExamController::class, 'login']);
+
+    Route::middleware('exam.session')->group(function (): void {
+        Route::get('/resume', [\App\Http\Controllers\Student\ExamController::class, 'resume']);
+        Route::post('/answer', [\App\Http\Controllers\Student\ExamController::class, 'answer']);
+        Route::post('/autosave', [\App\Http\Controllers\Student\ExamController::class, 'autosave']);
+        Route::post('/submit', [\App\Http\Controllers\Student\ExamController::class, 'submit']);
+    });
 });

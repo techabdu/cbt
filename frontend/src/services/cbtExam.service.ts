@@ -54,4 +54,11 @@ export const cbtExamService = {
 
   generateCodes: (examId: number): Promise<{ created: number; total_codes: number; message: string }> =>
     api.post(`/cbt-admin/exams/${examId}/codes/generate`).then((r) => r.data),
+
+  // Sync
+  sync: (examId: number): Promise<{ message: string; exam: { data: Exam } }> =>
+    api.post(`/cbt-admin/exams/${examId}/sync`).then((r) => r.data),
+
+  syncLogs: (params?: Record<string, string | number | undefined>): Promise<Paginated<import("@/types/sync.types").SyncLog>> =>
+    api.get("/cbt-admin/sync-logs", { params }).then((r) => r.data),
 };
