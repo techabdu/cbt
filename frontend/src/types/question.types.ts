@@ -7,16 +7,9 @@ import type { Course } from "@/types/course.types";
 
 export interface QuestionOption {
   id: number;
-  question_id: number;
   option_label: string; // A, B, C, D or T / F
   option_text: string;
   is_correct: boolean;
-}
-
-export interface QuestionAnswer {
-  id: number;
-  question_id: number;
-  correct_answer: string;
 }
 
 export interface Question {
@@ -27,12 +20,14 @@ export interface Question {
   marks: number;
   order_index: number;
   options?: QuestionOption[];
-  answers?: QuestionAnswer[];
+  /** Fill-in-the-blank accepted answers, returned as plain strings. */
+  answers?: string[];
 }
 
 export interface QuestionBank {
   id: number;
   lecturer_id: number;
+  lecturer?: { id: number; name: string; file_number: string } | null;
   course_id: number;
   course?: Course;
   title: string | null;
@@ -42,7 +37,27 @@ export interface QuestionBank {
   status: QuestionBankStatus;
   submitted_at: string | null;
   reviewed_at: string | null;
-  reviewed_by: number | null;
+  reviewer?: { id: number; name: string } | null;
   rejection_reason: string | null;
   questions?: Question[];
+  is_editable: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** One teaching assignment surfaced by GET /lecturer/courses. */
+export interface LecturerAssignment {
+  course: Course;
+  session: string;
+  semester: Semester;
+}
+
+/** Payload to create/replace a question (mirrors the backend FormRequest). */
+export interface QuestionPayload {
+  question_text: string;
+  question_type: QuestionType;
+  marks: number;
+  options?: { option_text: string; is_correct: boolean }[];
+  correct_answer?: "true" | "false";
+  answers?: string[];
 }

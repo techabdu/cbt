@@ -50,6 +50,42 @@ export const cbtAdminSchema = z.object({
 
 export type CbtAdminInput = z.infer<typeof cbtAdminSchema>;
 
+export const departmentSchema = z.object({
+  name:      z.string().min(1, "Name is required").max(255),
+  code:      z.string().min(1, "Code is required").max(30),
+  full_name: z.string().max(500).or(z.literal("")),
+});
+
+export type DepartmentInput = z.infer<typeof departmentSchema>;
+
+export const lecturerSchema = z.object({
+  file_number: z.string().min(1, "File number is required").max(50),
+  name:        z.string().min(1, "Name is required").max(255),
+  email:       z.string().email("Enter a valid email").max(255).or(z.literal("")),
+});
+
+export type LecturerInput = z.infer<typeof lecturerSchema>;
+
+export const studentSchema = z.object({
+  matric_number: z.string().min(1, "Matric number is required").max(50),
+  full_name:     z.string().min(1, "Full name is required").max(255),
+  department_id: z.string().min(1, "Department is required"),
+  level:         z.string().min(1, "Level is required"),
+});
+
+export type StudentInput = z.infer<typeof studentSchema>;
+
+export const courseSchema = z.object({
+  department_id: z.string().min(1, "Department is required"),
+  title:         z.string().min(1, "Title is required").max(255),
+  code:          z.string().min(1, "Code is required").max(20),
+  credit_units:  z.string().min(1, "Credit units is required"),
+  level:         z.string().min(1, "Level is required"),
+  semester:      z.string().min(1, "Semester is required"),
+});
+
+export type CourseInput = z.infer<typeof courseSchema>;
+
 export const studentLoginSchema = z.object({
   matric_number: z.string().min(1, "Matric number is required"),
   exam_code: z.string().min(1, "Exam code is required"),

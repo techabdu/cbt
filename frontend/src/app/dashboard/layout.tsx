@@ -25,15 +25,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+
   if (!isAuthenticated) return null;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <DashboardSidebar />
-      <div className="pl-60">
-        <DashboardTopbar />
+      <DashboardSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="lg:pl-60">
+        <DashboardTopbar onMenuClick={() => setSidebarOpen(true)} />
         <main className="pt-16">
-          <div className="mx-auto max-w-7xl p-6">
+          <div className="mx-auto max-w-7xl p-4 lg:p-6">
             {children}
           </div>
         </main>

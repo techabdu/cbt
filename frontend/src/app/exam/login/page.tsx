@@ -1,11 +1,14 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, WifiOff } from "lucide-react";
+import type { AxiosError } from "axios";
 
 import { studentLoginSchema } from "@/lib/validators";
+import { examService, examToken } from "@/services/examClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +18,8 @@ import type { z } from "zod";
 type StudentLoginForm = z.infer<typeof studentLoginSchema>;
 
 export default function StudentExamLoginPage() {
+  const router = useRouter();
+  const [formError, setFormError] = React.useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -23,9 +28,19 @@ export default function StudentExamLoginPage() {
     resolver: zodResolver(studentLoginSchema),
   });
 
-  const onSubmit = async (_data: StudentLoginForm) => {
-    // Phase 8 — student exam login will be implemented here
-    await new Promise((r) => setTimeout(r, 500));
+  const onSubmit = async (data: StudentLoginForm) => {
+    setFormError(null);
+    try {
+      const res = await examService.login(data.matric_number.trim(), data.exam_code.trim().toUpperCase());
+      examToken.set(res.token);
+      // Seed the exam page so it can render instantly without a second round-trip.
+      sessionStorage.setItem("cbt_exam_boot", JSON.stringify(res));
+      router.push(`/exam/${res.session.exam_id}`);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ errors?: Record<string, string[]>; message?: string }>;
+      const fieldErr = axiosErr.response?.data?.errors?.exam_code?.[0];
+      setFormError(fieldErr ?? axiosErr.response?.data?.message ?? "Could not start the exam. Check your details and try again.");
+    }
   };
 
   return (
@@ -79,6 +94,12 @@ export default function StudentExamLoginPage() {
               )}
             </div>
 
+            {formError && (
+              <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40" role="alert">
+                {formError}
+              </p>
+            )}
+
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isSubmitting ? "Starting exam…" : "Start Exam"}
@@ -88,7 +109,7 @@ export default function StudentExamLoginPage() {
       </Card>
 
       <p className="mt-6 text-xs text-slate-600">
-        Full exam interface available in Phase 8.
+        Keep this window open until you submit. Your answers save automatically.
       </p>
     </div>
   );

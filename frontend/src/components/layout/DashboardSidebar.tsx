@@ -16,6 +16,7 @@ import {
   FileText,
   CheckSquare,
   BarChart3,
+  X,
 } from "lucide-react";
 
 import { useAuth } from "@/providers/AuthProvider";
@@ -27,6 +28,11 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+}
+
+interface DashboardSidebarProps {
+  open?: boolean;
+  onClose?: () => void;
 }
 
 const NAV_ITEMS: Record<Role, NavItem[]> = {
@@ -62,7 +68,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
   ],
 };
 
-export function DashboardSidebar() {
+export function DashboardSidebar({ open = false, onClose }: DashboardSidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
@@ -79,12 +85,20 @@ export function DashboardSidebar() {
 
   const navItems = NAV_ITEMS[user.role] ?? [];
 
-  return (
-    <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+  const sidebarContent = (
+    <aside className="flex h-full w-60 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       {/* Logo / branding */}
-      <div className="flex h-16 items-center gap-2 border-b border-slate-200 px-6 dark:border-slate-800">
-        <GraduationCap className="h-6 w-6 text-blue-600" aria-hidden="true" />
-        <span className="font-bold text-slate-900 dark:text-slate-100 truncate">CBT Portal</span>
+      <div className="flex h-16 items-center justify-between gap-2 border-b border-slate-200 px-6 dark:border-slate-800">
+        <div className="flex items-center gap-2">
+          <GraduationCap className="h-6 w-6 text-blue-600" aria-hidden="true" />
+          <span className="font-bold text-slate-900 dark:text-slate-100 truncate">CBT Portal</span>
+        </div>
+        {/* Close button — mobile only */}
+        {onClose && (
+          <button onClick={onClose} className="lg:hidden text-slate-400 hover:text-slate-600" aria-label="Close menu">
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
@@ -100,6 +114,7 @@ export function DashboardSidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onClick={onClose}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100",
                     isActive
@@ -134,5 +149,30 @@ export function DashboardSidebar() {
         </button>
       </div>
     </aside>
+  );
+
+  return (
+    <>
+      {/* Desktop: fixed sidebar */}
+      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:w-60">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile: off-canvas drawer */}
+      {open && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            aria-hidden="true"
+            onClick={onClose}
+          />
+          {/* Drawer */}
+          <div className="fixed inset-y-0 left-0 z-50 w-60 lg:hidden">
+            {sidebarContent}
+          </div>
+        </>
+      )}
+    </>
   );
 }
