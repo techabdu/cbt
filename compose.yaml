@@ -1,0 +1,89 @@
+# CBT System — one-command local stack.
+#
+#   docker compose up --build        # start everything (first run builds + seeds)
+#   open http://localhost:3000       # staff portal — log in as the seeded Super Admin
+#   docker compose down              # stop (keeps your data)
+#   docker compose down -v           # stop and wipe the database + uploads (fresh seed next time)
+#
+# Services:
+#   frontend → http://localhost:3000   Next.js (staff dashboards + student exam UI)
+#   backend  → http://localhost:8000   Laravel API (REST, served under /api/*)
+#   db       → MySQL 8 (the engine the app targets in production)
+#
+# Auth is Sanctum bearer tokens (not session cookies), so the browser calls the
+# API directly at http://localhost:8000/api; CORS is opened to the frontend
+# origin via FRONTEND_URL — no reverse proxy needed.
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: cbt_online
+      MYSQL_USER: cbt_user
+      MYSQL_PASSWORD: cbt_secret
+      MYSQL_ROOT_PASSWORD: root_secret
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306" # optional: point a DB GUI at localhost:3306
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-proot_secret"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_NAME: "CBT System"
+      APP_ENV: local
+      # Demo key — fine to ship for a local app. Regenerate with:
+      #   php -r "echo 'base64:'.base64_encode(random_bytes(32)).PHP_EOL;"
+      APP_KEY: "base64:BlOqVj2TQDdrioFscmFmowi2mbBaA52UFgQQ0kA95RI="
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      FRONTEND_URL: http://localhost:3000
+      LOG_CHANNEL: stderr
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: cbt_online
+      DB_USERNAME: cbt_user
+      DB_PASSWORD: cbt_secret
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+      FILESYSTEM_DISK: local
+      # Sanctum bearer-token auth (8-hour token lifetime).
+      SANCTUM_STATEFUL_DOMAINS: localhost:3000,127.0.0.1:3000
+      SANCTUM_TOKEN_EXPIRATION: "480"
+      # CBT online/offline sync — this is the online server.
+      IS_OFFLINE_SERVER: "false"
+      # OFFLINE_SERVER_URL: http://192.168.1.10   # set to the offline server's LAN address to enable sync
+      SYNC_SECRET_KEY: cbt_dev_sync_secret_change_in_prod
+      SYNC_TIMEOUT: "30"
+      SYNC_RETRIES: "3"
+    volumes:
+      - backend_storage:/app/storage # keep uploaded files (question-bank attachments) across restarts
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the JS bundle at build time — must be reachable from the
+        # browser, and the CBT frontend expects the /api suffix on this value.
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  db_data:
+  backend_storage:
