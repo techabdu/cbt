@@ -69,6 +69,28 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         */
         Route::prefix('exam-officer')->middleware(['role:exam_officer', 'school.scope'])->group(function (): void {
             // Phase 4 — Lecturers/Students/Courses/Departments CRUD + assignments
+            Route::get('/stats', [\App\Http\Controllers\ExamOfficer\DashboardController::class, 'stats']);
+
+            Route::apiResource('departments', \App\Http\Controllers\ExamOfficer\DepartmentController::class);
+
+            Route::apiResource('lecturers', \App\Http\Controllers\ExamOfficer\LecturerController::class)
+                ->except(['show']);
+            Route::post('/lecturers/{lecturer}/reset-password', [\App\Http\Controllers\ExamOfficer\LecturerController::class, 'resetPassword']);
+
+            Route::apiResource('students', \App\Http\Controllers\ExamOfficer\StudentController::class);
+
+            Route::apiResource('courses', \App\Http\Controllers\ExamOfficer\CourseController::class);
+
+            // Course ↔ lecturer assignments
+            Route::get('/courses/{course}/lecturers', [\App\Http\Controllers\ExamOfficer\AssignmentController::class, 'courseLecturers']);
+            Route::post('/courses/{course}/assign-lecturer', [\App\Http\Controllers\ExamOfficer\AssignmentController::class, 'assignLecturer']);
+            Route::delete('/courses/{course}/lecturers/{lecturer}', [\App\Http\Controllers\ExamOfficer\AssignmentController::class, 'removeLecturer']);
+
+            // Course ↔ student enrolments
+            Route::get('/courses/{course}/students', [\App\Http\Controllers\ExamOfficer\AssignmentController::class, 'courseStudents']);
+            Route::post('/courses/{course}/assign-students', [\App\Http\Controllers\ExamOfficer\AssignmentController::class, 'assignStudents']);
+            Route::delete('/courses/{course}/students/{student}', [\App\Http\Controllers\ExamOfficer\AssignmentController::class, 'removeStudent']);
+
             // Phase 6 — Moderation (approve/reject question banks)
         });
 

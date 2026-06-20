@@ -73,6 +73,34 @@ class UserService
     }
 
     /**
+     * Create a Lecturer account scoped to a school.
+     *
+     * @return array{0: User, 1: string}
+     */
+    public function createLecturer(array $data, ?User $actor, ?string $ip = null): array
+    {
+        $tempPassword = $this->generateTempPassword();
+
+        $user = User::create([
+            'file_number'           => $data['file_number'],
+            'name'                  => $data['name'],
+            'email'                 => $data['email'] ?? null,
+            'password'              => $tempPassword,
+            'role'                  => UserRole::Lecturer,
+            'school_id'             => $data['school_id'],
+            'is_active'             => true,
+            'force_password_change' => true,
+        ]);
+
+        $this->auditLog->log('lecturer_created', $actor, User::class, $user->id, newValues: [
+            'file_number' => $user->file_number,
+            'name'        => $user->name,
+        ], ipAddress: $ip);
+
+        return [$user, $tempPassword];
+    }
+
+    /**
      * Reset a user's password to a fresh temp password and force a change.
      *
      * @return string the plain temp password
