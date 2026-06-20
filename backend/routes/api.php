@@ -47,10 +47,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
     // Routes below force a password change before access (except change-password above).
     Route::middleware('password.changed')->group(function (): void {
 
-        // Phase 10 — Notifications (all authenticated roles)
-        // Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index']);
-        // Route::patch('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markRead']);
-        // Route::post('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllRead']);
+        // Notifications (all authenticated roles) — database channel, polled by the bell
+        Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index']);
+        Route::patch('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markRead']);
+        Route::post('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllRead']);
 
         /*
         |----------------------------------------------------------------------
@@ -102,6 +102,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
             Route::delete('/courses/{course}/students/{student}', [\App\Http\Controllers\ExamOfficer\AssignmentController::class, 'removeStudent']);
 
             // Phase 6 — Moderation (approve/reject question banks)
+            Route::get('/moderation', [\App\Http\Controllers\ExamOfficer\ModerationController::class, 'index']);
+            Route::get('/moderation/{questionBank}', [\App\Http\Controllers\ExamOfficer\ModerationController::class, 'show']);
+            Route::post('/moderation/{questionBank}/approve', [\App\Http\Controllers\ExamOfficer\ModerationController::class, 'approve']);
+            Route::post('/moderation/{questionBank}/reject', [\App\Http\Controllers\ExamOfficer\ModerationController::class, 'reject']);
         });
 
         /*

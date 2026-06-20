@@ -27,6 +27,7 @@ export interface Question {
 export interface QuestionBank {
   id: number;
   lecturer_id: number;
+  lecturer?: { id: number; name: string; file_number: string } | null;
   course_id: number;
   course?: Course;
   title: string | null;

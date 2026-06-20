@@ -12,6 +12,11 @@ class QuestionBankResource extends JsonResource
         return [
             'id'               => $this->id,
             'lecturer_id'      => $this->lecturer_id,
+            'lecturer'         => $this->whenLoaded('lecturer', fn () => $this->lecturer ? [
+                'id'          => $this->lecturer->id,
+                'name'        => $this->lecturer->name,
+                'file_number' => $this->lecturer->file_number,
+            ] : null),
             'course_id'        => $this->course_id,
             'course'           => $this->whenLoaded('course', fn () => new CourseResource($this->course)),
             'title'            => $this->title,
