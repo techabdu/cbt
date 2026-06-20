@@ -50,6 +50,15 @@ export const cbtAdminSchema = z.object({
 
 export type CbtAdminInput = z.infer<typeof cbtAdminSchema>;
 
+export const examOfficerSchema = z.object({
+  file_number: z.string().min(1, "File number is required").max(50),
+  name:        z.string().min(1, "Name is required").max(255),
+  email:       z.string().email("Enter a valid email").max(255).or(z.literal("")),
+  school_id:   z.string().min(1, "School is required"),
+});
+
+export type ExamOfficerInput = z.infer<typeof examOfficerSchema>;
+
 export const departmentSchema = z.object({
   name:      z.string().min(1, "Name is required").max(255),
   code:      z.string().min(1, "Code is required").max(30),

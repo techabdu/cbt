@@ -53,6 +53,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
   ],
   cbt_admin: [
     { label: "Overview",       href: "/dashboard/cbt-admin",                  icon: LayoutDashboard },
+    { label: "Exam Officers",  href: "/dashboard/cbt-admin/exam-officers",    icon: Users },
     { label: "Exams",          href: "/dashboard/cbt-admin/exams",            icon: ClipboardList },
     { label: "Question Banks", href: "/dashboard/cbt-admin/question-banks",   icon: BookOpen },
     { label: "Role Management",href: "/dashboard/cbt-admin/role-management",  icon: Shield },
