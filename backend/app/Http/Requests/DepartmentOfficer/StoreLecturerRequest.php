@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Requests\ExamOfficer;
+namespace App\Http\Requests\DepartmentOfficer;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;

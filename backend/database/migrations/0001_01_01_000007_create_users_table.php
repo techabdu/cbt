@@ -16,9 +16,12 @@ return new class extends Migration
             $table->string('email')->nullable()->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
-            $table->enum('role', ['super_admin', 'cbt_admin', 'exam_officer', 'lecturer']);
+            $table->enum('role', ['super_admin', 'cbt_admin', 'exam_officer', 'department_exam_officer', 'lecturer']);
             // Null for super_admin and cbt_admin (system-wide); set for exam_officer/lecturer.
             $table->foreignId('school_id')->nullable()->constrained()->nullOnDelete();
+            // Required for department_exam_officer and lecturer; optional for an
+            // exam_officer (the CBT Admin may leave it pending); null for admins.
+            $table->foreignId('department_id')->nullable()->constrained()->nullOnDelete();
             $table->boolean('is_active')->default(true);
             $table->boolean('force_password_change')->default(true);
             $table->timestamp('last_login_at')->nullable();

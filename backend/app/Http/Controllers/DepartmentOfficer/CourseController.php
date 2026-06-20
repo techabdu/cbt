@@ -1,13 +1,14 @@
 <?php
 
-namespace App\Http\Controllers\ExamOfficer;
+namespace App\Http\Controllers\DepartmentOfficer;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\ExamOfficer\StoreCourseRequest;
-use App\Http\Requests\ExamOfficer\UpdateCourseRequest;
+use App\Http\Requests\DepartmentOfficer\StoreCourseRequest;
+use App\Http\Requests\DepartmentOfficer\UpdateCourseRequest;
 use App\Http\Resources\CourseResource;
 use App\Models\Course;
 use App\Services\AuditLogService;
+use App\Services\CombinationEnrollmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Spatie\QueryBuilder\AllowedFilter;
@@ -15,14 +16,17 @@ use Spatie\QueryBuilder\QueryBuilder;
 
 class CourseController extends Controller
 {
-    public function __construct(private readonly AuditLogService $auditLog) {}
+    public function __construct(
+        private readonly AuditLogService $auditLog,
+        private readonly CombinationEnrollmentService $enrollment,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
-        $schoolId = $request->attributes->get('school_id');
+        $deptId = $request->attributes->get('department_id');
 
         $courses = QueryBuilder::for(Course::class)
-            ->where('school_id', $schoolId)
+            ->where('department_id', $deptId)
             ->with('department')
             ->withCount(['lecturers', 'students'])
             ->allowedFilters(
@@ -30,7 +34,6 @@ class CourseController extends Controller
                     fn ($q) => $q->where('title', 'like', "%{$v}%")
                                ->orWhere('code', 'like', "%{$v}%")
                 )),
-                AllowedFilter::exact('department_id'),
                 AllowedFilter::exact('level'),
                 AllowedFilter::exact('semester')
             )
@@ -55,6 +58,12 @@ class CourseController extends Controller
             ipAddress: $request->ip()
         );
 
+        // Back-fill enrolments for students already assigned to a combination
+        // that includes this department at the course's level.
+        if ($session = $this->enrollment->currentSession((int) $schoolId)) {
+            $this->enrollment->enrolStudentsForCourse($course, $session);
+        }
+
         $course->load('department')->loadCount(['lecturers', 'students']);
 
         return (new CourseResource($course))->response()->setStatusCode(201);
@@ -62,7 +71,7 @@ class CourseController extends Controller
 
     public function show(Request $request, Course $course): JsonResponse
     {
-        $this->guard($request, $course->school_id);
+        $this->guard($request, $course);
         $course->load('department')->loadCount(['lecturers', 'students']);
 
         return (new CourseResource($course))->response();
@@ -70,7 +79,7 @@ class CourseController extends Controller
 
     public function update(UpdateCourseRequest $request, Course $course): JsonResponse
     {
-        $this->guard($request, $course->school_id);
+        $this->guard($request, $course);
 
         $old = $course->toArray();
         $course->update($request->validated());
@@ -88,7 +97,7 @@ class CourseController extends Controller
 
     public function destroy(Request $request, Course $course): JsonResponse
     {
-        $this->guard($request, $course->school_id);
+        $this->guard($request, $course);
         $course->loadCount(['lecturers', 'students']);
 
         if ($course->lecturers_count > 0 || $course->students_count > 0) {
@@ -109,10 +118,13 @@ class CourseController extends Controller
         return response()->json(null, 204);
     }
 
-    private function guard(Request $request, int $courseSchoolId): void
+    private function guard(Request $request, Course $course): void
     {
         $schoolId = $request->attributes->get('school_id');
-        if ($schoolId && $courseSchoolId !== (int) $schoolId) {
+        $deptId   = $request->attributes->get('department_id');
+
+        if (($schoolId && $course->school_id !== (int) $schoolId)
+            || ($deptId && $course->department_id !== (int) $deptId)) {
             abort(403, 'Access denied.');
         }
     }

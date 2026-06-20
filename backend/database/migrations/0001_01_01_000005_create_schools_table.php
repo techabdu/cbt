@@ -14,6 +14,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('code')->unique();
             $table->string('head_name')->nullable();
+            // Active half of the academic calendar; paired with the school's
+            // current academic_session (see academic_sessions.is_current).
+            $table->enum('current_semester', ['first', 'second'])->nullable();
             $table->timestamps();
         });
     }

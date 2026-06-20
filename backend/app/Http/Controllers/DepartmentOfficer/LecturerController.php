@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Http\Controllers\ExamOfficer;
+namespace App\Http\Controllers\DepartmentOfficer;
 
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\ExamOfficer\StoreLecturerRequest;
-use App\Http\Requests\ExamOfficer\UpdateLecturerRequest;
+use App\Http\Requests\DepartmentOfficer\StoreLecturerRequest;
+use App\Http\Requests\DepartmentOfficer\UpdateLecturerRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Services\AuditLogService;
@@ -25,9 +25,11 @@ class LecturerController extends Controller
     public function index(Request $request): JsonResponse
     {
         $schoolId = $request->attributes->get('school_id');
+        $deptId   = $request->attributes->get('department_id');
 
         $lecturers = QueryBuilder::for(User::class)
             ->where('school_id', $schoolId)
+            ->where('department_id', $deptId)
             ->where('role', UserRole::Lecturer->value)
             ->allowedFilters(
                 AllowedFilter::callback('search', fn ($q, $v) => $q->where(
@@ -47,9 +49,10 @@ class LecturerController extends Controller
     public function store(StoreLecturerRequest $request): JsonResponse
     {
         $schoolId = $request->attributes->get('school_id');
+        $deptId   = $request->attributes->get('department_id');
 
         [$user, $tempPassword] = $this->userService->createLecturer(
-            array_merge($request->validated(), ['school_id' => $schoolId]),
+            array_merge($request->validated(), ['school_id' => $schoolId, 'department_id' => $deptId]),
             $request->user(),
             $request->ip()
         );
@@ -101,7 +104,11 @@ class LecturerController extends Controller
     private function guard(Request $request, User $lecturer): void
     {
         $schoolId = $request->attributes->get('school_id');
-        if ($lecturer->role !== UserRole::Lecturer || ($schoolId && $lecturer->school_id !== (int) $schoolId)) {
+        $deptId   = $request->attributes->get('department_id');
+
+        if ($lecturer->role !== UserRole::Lecturer
+            || ($schoolId && $lecturer->school_id !== (int) $schoolId)
+            || ($deptId && $lecturer->department_id !== (int) $deptId)) {
             abort(404);
         }
     }

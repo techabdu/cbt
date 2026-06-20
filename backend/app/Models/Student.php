@@ -17,6 +17,7 @@ class Student extends Model
         'matric_number',
         'full_name',
         'department_id',
+        'combination_id',
         'school_id',
         'level',
         'photo_path',
@@ -34,6 +35,11 @@ class Student extends Model
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function combination(): BelongsTo
+    {
+        return $this->belongsTo(Combination::class);
     }
 
     public function school(): BelongsTo

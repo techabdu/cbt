@@ -83,11 +83,11 @@ class DepartmentController extends Controller
     public function destroy(Request $request, Department $department): JsonResponse
     {
         $this->guard($request, $department->school_id);
-        $department->loadCount(['courses', 'students']);
+        $department->loadCount(['courses', 'students', 'combinations']);
 
-        if ($department->courses_count > 0 || $department->students_count > 0) {
+        if ($department->courses_count > 0 || $department->students_count > 0 || $department->combinations_count > 0) {
             return response()->json([
-                'message' => 'Cannot delete a department that still has courses or students. Remove them first.',
+                'message' => 'Cannot delete a department that still has courses, students, or combinations. Remove them first.',
             ], 422);
         }
 

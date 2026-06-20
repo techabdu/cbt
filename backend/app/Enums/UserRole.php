@@ -7,6 +7,7 @@ enum UserRole: string
     case SuperAdmin = 'super_admin';
     case CbtAdmin = 'cbt_admin';
     case ExamOfficer = 'exam_officer';
+    case DepartmentExamOfficer = 'department_exam_officer';
     case Lecturer = 'lecturer';
 
     /**
@@ -16,9 +17,10 @@ enum UserRole: string
     public function rank(): int
     {
         return match ($this) {
-            self::SuperAdmin => 4,
-            self::CbtAdmin => 3,
-            self::ExamOfficer => 2,
+            self::SuperAdmin => 5,
+            self::CbtAdmin => 4,
+            self::ExamOfficer => 3,
+            self::DepartmentExamOfficer => 2,
             self::Lecturer => 1,
         };
     }
@@ -29,6 +31,7 @@ enum UserRole: string
             self::SuperAdmin => 'Super Admin',
             self::CbtAdmin => 'CBT Admin',
             self::ExamOfficer => 'School Exam Officer',
+            self::DepartmentExamOfficer => 'Department Exam Officer',
             self::Lecturer => 'Lecturer',
         };
     }

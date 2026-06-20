@@ -15,6 +15,8 @@ class StudentResource extends JsonResource
             'full_name'      => $this->full_name,
             'department_id'  => $this->department_id,
             'department'     => $this->whenLoaded('department', fn () => new DepartmentResource($this->department)),
+            'combination_id' => $this->combination_id,
+            'combination'    => $this->whenLoaded('combination', fn () => new CombinationResource($this->combination)),
             'school_id'      => $this->school_id,
             'level'          => $this->level?->value,
             'photo_path'     => $this->photo_path,

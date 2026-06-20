@@ -23,13 +23,14 @@ class StudentController extends Controller
 
         $students = QueryBuilder::for(Student::class)
             ->where('school_id', $schoolId)
-            ->with('department')
+            ->with(['department', 'combination'])
             ->allowedFilters(
                 AllowedFilter::callback('search', fn ($q, $v) => $q->where(
                     fn ($q) => $q->where('full_name', 'like', "%{$v}%")
                                ->orWhere('matric_number', 'like', "%{$v}%")
                 )),
                 AllowedFilter::exact('department_id'),
+                AllowedFilter::exact('combination_id'),
                 AllowedFilter::exact('level'),
                 AllowedFilter::exact('is_active')
             )
@@ -57,7 +58,7 @@ class StudentController extends Controller
             ipAddress: $request->ip()
         );
 
-        $student->load('department');
+        $student->load(['department', 'combination']);
 
         return (new StudentResource($student))->response()->setStatusCode(201);
     }
@@ -65,7 +66,7 @@ class StudentController extends Controller
     public function show(Request $request, Student $student): JsonResponse
     {
         $this->guard($request, $student->school_id);
-        $student->load('department');
+        $student->load(['department', 'combination']);
 
         return (new StudentResource($student))->response();
     }
@@ -83,7 +84,7 @@ class StudentController extends Controller
             oldValues: $old, newValues: $student->fresh()->toArray(), ipAddress: $request->ip()
         );
 
-        $student->refresh()->load('department');
+        $student->refresh()->load(['department', 'combination']);
 
         return (new StudentResource($student))->response();
     }

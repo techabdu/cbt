@@ -9,6 +9,7 @@ use App\Models\Course;
 use App\Models\Department;
 use App\Models\QuestionBank;
 use App\Models\School;
+use App\Models\Student;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -49,6 +50,22 @@ class LecturerTest extends TestCase
             'session'     => '2024/2025',
             'semester'    => 'first',
         ]);
+    }
+
+    // ── Students ──────────────────────────────────────────────────────────────
+
+    public function test_lecturer_sees_only_students_in_their_courses(): void
+    {
+        $mine = Student::factory()->count(2)->create(['school_id' => $this->school->id]);
+        foreach ($mine as $student) {
+            $this->course->students()->attach($student->id, ['session' => '2024/2025', 'semester' => 'first']);
+        }
+        // A student enrolled in a different course must not appear.
+        Student::factory()->create(['school_id' => $this->school->id]);
+
+        $this->act()->getJson('/api/lecturer/students')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
     }
 
     // ── Access ──────────────────────────────────────────────────────────────

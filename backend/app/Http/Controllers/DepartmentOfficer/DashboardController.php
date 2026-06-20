@@ -1,13 +1,11 @@
 <?php
 
-namespace App\Http\Controllers\ExamOfficer;
+namespace App\Http\Controllers\DepartmentOfficer;
 
 use App\Enums\QuestionBankStatus;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
-use App\Models\Combination;
 use App\Models\Course;
-use App\Models\Department;
 use App\Models\QuestionBank;
 use App\Models\Student;
 use App\Models\User;
@@ -19,19 +17,18 @@ class DashboardController extends Controller
     public function stats(Request $request): JsonResponse
     {
         $schoolId = $request->attributes->get('school_id');
+        $deptId   = $request->attributes->get('department_id');
 
         return response()->json([
             'lecturers'          => User::where('school_id', $schoolId)
+                ->where('department_id', $deptId)
                 ->where('role', UserRole::Lecturer->value)
                 ->count(),
-            'department_officers' => User::where('school_id', $schoolId)
-                ->where('role', UserRole::DepartmentExamOfficer->value)
+            'courses'            => Course::where('department_id', $deptId)->count(),
+            'students'           => Student::where('school_id', $schoolId)
+                ->whereHas('combination.departments', fn ($q) => $q->where('departments.id', $deptId))
                 ->count(),
-            'students'           => Student::where('school_id', $schoolId)->count(),
-            'courses'            => Course::where('school_id', $schoolId)->count(),
-            'departments'        => Department::where('school_id', $schoolId)->count(),
-            'combinations'       => Combination::where('school_id', $schoolId)->count(),
-            'pending_moderation' => QuestionBank::whereHas('course', fn ($q) => $q->where('school_id', $schoolId))
+            'pending_moderation' => QuestionBank::whereHas('course', fn ($q) => $q->where('department_id', $deptId))
                 ->whereIn('status', [
                     QuestionBankStatus::Submitted->value,
                     QuestionBankStatus::UnderReview->value,

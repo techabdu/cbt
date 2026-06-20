@@ -13,8 +13,8 @@ return new class extends Migration
         Schema::create('role_upgrades', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->enum('from_role', ['super_admin', 'cbt_admin', 'exam_officer', 'lecturer']);
-            $table->enum('to_role', ['super_admin', 'cbt_admin', 'exam_officer', 'lecturer']);
+            $table->enum('from_role', ['super_admin', 'cbt_admin', 'exam_officer', 'department_exam_officer', 'lecturer']);
+            $table->enum('to_role', ['super_admin', 'cbt_admin', 'exam_officer', 'department_exam_officer', 'lecturer']);
             $table->foreignId('upgraded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('school_id')->nullable()->constrained()->nullOnDelete();
             $table->text('reason')->nullable();

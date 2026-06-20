@@ -1,15 +1,13 @@
 <?php
 
-namespace App\Http\Controllers\ExamOfficer;
+namespace App\Http\Controllers\DepartmentOfficer;
 
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\ExamOfficer\AssignLecturerRequest;
-use App\Http\Requests\ExamOfficer\AssignStudentsRequest;
+use App\Http\Requests\DepartmentOfficer\AssignLecturerRequest;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\UserResource;
 use App\Models\Course;
-use App\Models\Student;
 use App\Models\User;
 use App\Services\AuditLogService;
 use Illuminate\Http\JsonResponse;
@@ -19,17 +17,11 @@ class AssignmentController extends Controller
 {
     public function __construct(private readonly AuditLogService $auditLog) {}
 
-    // ── Lecturers ──────────────────────────────────────────────────────────────
-
     public function courseLecturers(Request $request, Course $course): JsonResponse
     {
         $this->guardCourse($request, $course);
 
-        $lecturers = $course->lecturers()
-            ->orderBy('name')
-            ->get();
-
-        return UserResource::collection($lecturers)->response();
+        return UserResource::collection($course->lecturers()->orderBy('name')->get())->response();
     }
 
     public function assignLecturer(AssignLecturerRequest $request, Course $course): JsonResponse
@@ -40,7 +32,6 @@ class AssignmentController extends Controller
         $session    = $request->validated('session');
         $semester   = $request->validated('semester');
 
-        // Idempotent — same lecturer can't be assigned twice for same session+semester
         $course->lecturers()->syncWithoutDetaching([
             $lecturerId => ['session' => $session, 'semester' => $semester],
         ]);
@@ -75,14 +66,16 @@ class AssignmentController extends Controller
         return response()->json(null, 204);
     }
 
-    // ── Students ───────────────────────────────────────────────────────────────
-
+    /**
+     * Read-only roster of students enrolled in a course (enrolment itself is
+     * driven by combination assignment, owned by the School Exam Officer).
+     */
     public function courseStudents(Request $request, Course $course): JsonResponse
     {
         $this->guardCourse($request, $course);
 
         $students = $course->students()
-            ->with('department')
+            ->with('combination')
             ->orderBy('full_name')
             ->paginate($request->integer('per_page', 50))
             ->withQueryString();
@@ -90,49 +83,13 @@ class AssignmentController extends Controller
         return StudentResource::collection($students)->response();
     }
 
-    public function assignStudents(AssignStudentsRequest $request, Course $course): JsonResponse
-    {
-        $this->guardCourse($request, $course);
-
-        $ids      = $request->validated('student_ids');
-        $session  = $request->validated('session');
-        $semester = $request->validated('semester');
-
-        $pivotData = array_fill_keys($ids, ['session' => $session, 'semester' => $semester]);
-        $course->students()->syncWithoutDetaching($pivotData);
-
-        $this->auditLog->log(
-            'students_enrolled_in_course', $request->user(),
-            Course::class, $course->id,
-            newValues: ['student_ids' => $ids, 'count' => count($ids), 'session' => $session, 'semester' => $semester],
-            ipAddress: $request->ip()
-        );
-
-        return response()->json(['message' => count($ids) . ' student(s) enrolled successfully.']);
-    }
-
-    public function removeStudent(Request $request, Course $course, Student $student): JsonResponse
-    {
-        $this->guardCourse($request, $course);
-
-        $course->students()->detach($student->id);
-
-        $this->auditLog->log(
-            'student_removed_from_course', $request->user(),
-            Course::class, $course->id,
-            oldValues: ['student_id' => $student->id],
-            ipAddress: $request->ip()
-        );
-
-        return response()->json(null, 204);
-    }
-
-    // ── helpers ────────────────────────────────────────────────────────────────
-
     private function guardCourse(Request $request, Course $course): void
     {
         $schoolId = $request->attributes->get('school_id');
-        if ($schoolId && $course->school_id !== (int) $schoolId) {
+        $deptId   = $request->attributes->get('department_id');
+
+        if (($schoolId && $course->school_id !== (int) $schoolId)
+            || ($deptId && $course->department_id !== (int) $deptId)) {
             abort(403, 'Access denied.');
         }
     }

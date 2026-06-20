@@ -26,8 +26,12 @@ class RoleManagementController extends Controller
     public function index(Request $request): JsonResponse
     {
         $users = QueryBuilder::for(User::class)
-            ->whereIn('role', [UserRole::Lecturer->value, UserRole::ExamOfficer->value])
-            ->with('school')
+            ->whereIn('role', [
+                UserRole::Lecturer->value,
+                UserRole::DepartmentExamOfficer->value,
+                UserRole::ExamOfficer->value,
+            ])
+            ->with(['school', 'department'])
             ->allowedFilters(
                 AllowedFilter::exact('role'),
                 AllowedFilter::exact('school_id'),
