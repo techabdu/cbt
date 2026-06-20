@@ -10,6 +10,7 @@ import { DashboardTopbar } from "@/components/layout/DashboardTopbar";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -24,8 +25,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
     );
   }
-
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
   if (!isAuthenticated) return null;
 
