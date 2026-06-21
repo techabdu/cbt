@@ -22,9 +22,11 @@ class UpdateStudentRequest extends FormRequest
             'matric_number' => ['required', 'string', 'max:50',
                 Rule::unique('students', 'matric_number')->ignore($studentId)],
             'full_name'     => ['required', 'string', 'max:255'],
-            'department_id' => ['required', 'integer',
-                Rule::exists('departments', 'id')->where('school_id', $schoolId)],
             'level'         => ['required', Rule::enum(StudentLevel::class)],
+            'combination_id' => ['nullable', 'integer',
+                Rule::exists('combinations', 'id')->where('school_id', $schoolId)],
+            'department_id' => ['nullable', 'integer',
+                Rule::exists('departments', 'id')->where('school_id', $schoolId)],
             'is_active'     => ['sometimes', 'boolean'],
         ];
     }

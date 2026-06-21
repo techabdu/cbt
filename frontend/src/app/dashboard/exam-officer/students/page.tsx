@@ -9,7 +9,7 @@ import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, GraduationCap } 
 import type { AxiosError } from "axios";
 
 import { studentService, type StudentPayload } from "@/services/student.service";
-import { departmentService } from "@/services/department.service";
+import { combinationService } from "@/services/combination.service";
 import { studentSchema, type StudentInput } from "@/lib/validators";
 import { LEVEL_LABELS, LEVEL_OPTIONS } from "@/lib/constants";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -27,32 +27,33 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Student } from "@/types/student.types";
+import type { Combination } from "@/types/combination.types";
 import type { StudentLevel } from "@/types/common.types";
 
 export default function StudentsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = React.useState(1);
   const [search, setSearch] = React.useState("");
-  const [deptFilter, setDeptFilter] = React.useState("");
+  const [comboFilter, setComboFilter] = React.useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Student | null>(null);
   const [deleting, setDeleting] = React.useState<Student | null>(null);
 
-  React.useEffect(() => setPage(1), [debouncedSearch, deptFilter]);
+  React.useEffect(() => setPage(1), [debouncedSearch, comboFilter]);
 
-  const { data: deptData } = useQuery({
-    queryKey: ["departments", "all"],
-    queryFn: () => departmentService.list({ per_page: 100 }),
+  const { data: comboData } = useQuery({
+    queryKey: ["combinations", "all"],
+    queryFn: () => combinationService.list({ per_page: 100 }),
     staleTime: 60_000,
   });
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["students", page, debouncedSearch, deptFilter],
+    queryKey: ["students", page, debouncedSearch, comboFilter],
     queryFn: () => studentService.list({
       page,
       "filter[search]": debouncedSearch || undefined,
-      "filter[department_id]": deptFilter || undefined,
+      "filter[combination_id]": comboFilter || undefined,
     }),
     placeholderData: keepPreviousData,
   });
@@ -70,14 +71,14 @@ export default function StudentsPage() {
     },
   });
 
-  const departments = deptData?.data ?? [];
+  const combinations = comboData?.data ?? [];
   const students = data?.data ?? [];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Students"
-        description="Manage students enrolled in your school."
+        description="Register students and assign them to a combination to auto-enrol them."
         action={
           <Button onClick={() => { setEditing(null); setFormOpen(true); }}>
             <Plus className="h-4 w-4" /> Add Student
@@ -98,13 +99,13 @@ export default function StudentsPage() {
           </div>
           <select
             className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950 min-w-40"
-            value={deptFilter}
-            onChange={(e) => setDeptFilter(e.target.value)}
-            aria-label="Filter by department"
+            value={comboFilter}
+            onChange={(e) => setComboFilter(e.target.value)}
+            aria-label="Filter by combination"
           >
-            <option value="">All Departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={String(d.id)}>{d.name} ({d.code})</option>
+            <option value="">All Combinations</option>
+            {combinations.map((c) => (
+              <option key={c.id} value={String(c.id)}>{c.code}</option>
             ))}
           </select>
         </div>
@@ -114,9 +115,9 @@ export default function StudentsPage() {
         ) : students.length === 0 ? (
           <EmptyState
             icon={GraduationCap}
-            title={debouncedSearch || deptFilter ? "No students match the filters" : "No students yet"}
-            description={debouncedSearch || deptFilter ? "Try adjusting your filters." : "Add your first student to get started."}
-            action={!debouncedSearch && !deptFilter && (
+            title={debouncedSearch || comboFilter ? "No students match the filters" : "No students yet"}
+            description={debouncedSearch || comboFilter ? "Try adjusting your filters." : "Add your first student to get started."}
+            action={!debouncedSearch && !comboFilter && (
               <Button onClick={() => { setEditing(null); setFormOpen(true); }}>
                 <Plus className="h-4 w-4" /> Add Student
               </Button>
@@ -129,7 +130,7 @@ export default function StudentsPage() {
                 <TableRow>
                   <TableHead>Full Name</TableHead>
                   <TableHead>Matric Number</TableHead>
-                  <TableHead>Department</TableHead>
+                  <TableHead>Combination</TableHead>
                   <TableHead>Level</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-12" />
@@ -141,7 +142,7 @@ export default function StudentsPage() {
                     <TableCell className="font-medium">{student.full_name}</TableCell>
                     <TableCell><span className="font-mono text-xs">{student.matric_number}</span></TableCell>
                     <TableCell className="text-sm text-slate-500">
-                      {student.department?.code ?? "—"}
+                      {student.combination?.code ?? "—"}
                     </TableCell>
                     <TableCell className="text-sm">
                       {LEVEL_LABELS[student.level as StudentLevel] ?? student.level}
@@ -181,7 +182,7 @@ export default function StudentsPage() {
         open={formOpen}
         onOpenChange={setFormOpen}
         student={editing}
-        departments={departments}
+        combinations={combinations}
         onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ["students"] });
           queryClient.invalidateQueries({ queryKey: ["exam-officer-stats"] });
@@ -203,12 +204,12 @@ export default function StudentsPage() {
 }
 
 function StudentFormDialog({
-  open, onOpenChange, student, departments, onSaved,
+  open, onOpenChange, student, combinations, onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   student: Student | null;
-  departments: { id: number; name: string; code: string }[];
+  combinations: Combination[];
   onSaved: () => void;
 }) {
   const isEdit = !!student;
@@ -219,18 +220,20 @@ function StudentFormDialog({
   React.useEffect(() => {
     if (open) {
       reset({
-        matric_number: student?.matric_number ?? "",
-        full_name:     student?.full_name ?? "",
-        department_id: String(student?.department_id ?? ""),
-        level:         student?.level ?? "",
+        matric_number:  student?.matric_number ?? "",
+        full_name:      student?.full_name ?? "",
+        level:          student?.level ?? "",
+        combination_id: student?.combination_id ? String(student.combination_id) : "",
       });
     }
   }, [open, student, reset]);
 
   const onSubmit = async (data: StudentInput) => {
     const payload: StudentPayload = {
-      ...data,
-      department_id: Number(data.department_id),
+      matric_number:  data.matric_number,
+      full_name:      data.full_name,
+      level:          data.level,
+      combination_id: data.combination_id ? Number(data.combination_id) : null,
     };
     try {
       if (isEdit) {
@@ -243,11 +246,11 @@ function StudentFormDialog({
       onSaved();
       onOpenChange(false);
     } catch (err) {
-      const axiosErr = err as AxiosError<{ errors?: Record<string, string[]> }>;
+      const axiosErr = err as AxiosError<{ message?: string; errors?: Record<string, string[]> }>;
       const fe = axiosErr.response?.data?.errors;
       if (fe?.matric_number) setError("matric_number", { message: fe.matric_number[0] });
-      else if (fe?.department_id) setError("department_id", { message: fe.department_id[0] });
-      else toast.error("Could not save student");
+      else if (fe?.combination_id) setError("combination_id", { message: fe.combination_id[0] });
+      else toast.error(axiosErr.response?.data?.message ?? "Could not save student");
     }
   };
 
@@ -272,20 +275,6 @@ function StudentFormDialog({
             {errors.full_name && <p className="text-sm text-red-600">! {errors.full_name.message}</p>}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="stu_dept">Department <span className="text-red-500">*</span></Label>
-            <select
-              id="stu_dept"
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-              {...register("department_id")}
-            >
-              <option value="">Select department…</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
-              ))}
-            </select>
-            {errors.department_id && <p className="text-sm text-red-600">! {errors.department_id.message}</p>}
-          </div>
-          <div className="space-y-1.5">
             <Label htmlFor="stu_level">Level <span className="text-red-500">*</span></Label>
             <select
               id="stu_level"
@@ -298,6 +287,21 @@ function StudentFormDialog({
               ))}
             </select>
             {errors.level && <p className="text-sm text-red-600">! {errors.level.message}</p>}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="stu_combo">Combination <span className="text-slate-400 text-xs">(optional)</span></Label>
+            <select
+              id="stu_combo"
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+              {...register("combination_id")}
+            >
+              <option value="">Unassigned — assign later</option>
+              {combinations.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400">Assigning a combination auto-enrols the student into its departments&apos; courses at their level.</p>
+            {errors.combination_id && <p className="text-sm text-red-600">! {errors.combination_id.message}</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

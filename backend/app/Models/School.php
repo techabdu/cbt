@@ -16,11 +16,29 @@ class School extends Model
         'name',
         'code',
         'head_name',
+        'current_semester',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'current_semester' => \App\Enums\Semester::class,
+        ];
+    }
 
     public function college(): BelongsTo
     {
         return $this->belongsTo(College::class);
+    }
+
+    public function combinations(): HasMany
+    {
+        return $this->hasMany(Combination::class);
+    }
+
+    public function academicSessions(): HasMany
+    {
+        return $this->hasMany(AcademicSession::class);
     }
 
     public function departments(): HasMany

@@ -12,7 +12,9 @@ return new class extends Migration
             $table->id();
             $table->string('matric_number')->unique();
             $table->string('full_name');
-            $table->foreignId('department_id')->constrained()->cascadeOnDelete();
+            // Optional "home/registering" department. The canonical program link
+            // is combination_id (added in a later migration once combinations exist).
+            $table->foreignId('department_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('school_id')->constrained()->cascadeOnDelete();
             $table->enum('level', ['NCE_100', 'NCE_200', 'NCE_300', 'Spillover_I', 'Spillover_II']);
             $table->string('photo_path')->nullable();

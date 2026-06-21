@@ -139,54 +139,6 @@ class ExamOfficerTest extends TestCase
             ->assertForbidden();
     }
 
-    // ── Lecturers ─────────────────────────────────────────────────────────────
-
-    public function test_can_create_lecturer(): void
-    {
-        $response = $this->act()->postJson('/api/exam-officer/lecturers', [
-            'file_number' => 'LEC/0001',
-            'name'        => 'Dr. Adamu',
-        ])
-            ->assertCreated()
-            ->assertJsonStructure(['user', 'temp_password']);
-
-        $this->assertDatabaseHas('users', ['file_number' => 'LEC/0001', 'role' => UserRole::Lecturer->value]);
-    }
-
-    public function test_lecturer_is_scoped_to_officers_school(): void
-    {
-        $response = $this->act()->postJson('/api/exam-officer/lecturers', [
-            'file_number' => 'LEC/0002',
-            'name'        => 'Mrs. Fatima',
-        ])
-            ->assertCreated();
-
-        $this->assertDatabaseHas('users', ['file_number' => 'LEC/0002', 'school_id' => $this->school->id]);
-    }
-
-    public function test_lecturer_file_number_must_be_unique(): void
-    {
-        User::factory()->role(UserRole::Lecturer)->create([
-            'school_id'   => $this->school->id,
-            'file_number' => 'LEC/9999',
-        ]);
-
-        $this->act()->postJson('/api/exam-officer/lecturers', ['file_number' => 'LEC/9999', 'name' => 'X'])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('file_number');
-    }
-
-    public function test_can_reset_lecturer_password(): void
-    {
-        $lecturer = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $this->school->id]);
-
-        $this->act()->postJson("/api/exam-officer/lecturers/{$lecturer->id}/reset-password")
-            ->assertOk()
-            ->assertJsonStructure(['temp_password']);
-
-        $this->assertCount(0, $lecturer->fresh()->tokens);
-    }
-
     // ── Students ──────────────────────────────────────────────────────────────
 
     public function test_can_create_student(): void
@@ -231,100 +183,187 @@ class ExamOfficerTest extends TestCase
             ->assertJsonCount(3, 'data');
     }
 
-    // ── Courses ───────────────────────────────────────────────────────────────
+    // ── Combinations ──────────────────────────────────────────────────────────
 
-    public function test_can_create_course(): void
+    public function test_can_create_combination_coupling_two_departments(): void
+    {
+        $csc = Department::factory()->create(['school_id' => $this->school->id, 'code' => 'CSC']);
+        $mat = Department::factory()->create(['school_id' => $this->school->id, 'code' => 'MAT']);
+
+        $this->act()->postJson('/api/exam-officer/combinations', [
+            'name'           => 'Computer Science / Mathematics',
+            'code'           => 'CSC/MAT',
+            'department_ids' => [$csc->id, $mat->id],
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.code', 'CSC/MAT')
+            ->assertJsonCount(2, 'data.departments');
+
+        $this->assertDatabaseHas('combinations', ['code' => 'CSC/MAT', 'school_id' => $this->school->id]);
+    }
+
+    public function test_combination_requires_at_least_two_departments(): void
+    {
+        $csc = Department::factory()->create(['school_id' => $this->school->id]);
+
+        $this->act()->postJson('/api/exam-officer/combinations', [
+            'name'           => 'Solo',
+            'code'           => 'SOLO',
+            'department_ids' => [$csc->id],
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('department_ids');
+    }
+
+    public function test_combination_departments_must_belong_to_school(): void
+    {
+        $mine    = Department::factory()->create(['school_id' => $this->school->id]);
+        $foreign = Department::factory()->create(); // other school
+
+        $this->act()->postJson('/api/exam-officer/combinations', [
+            'name'           => 'X',
+            'code'           => 'X/Y',
+            'department_ids' => [$mine->id, $foreign->id],
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('department_ids.1');
+    }
+
+    // ── Academic calendar ─────────────────────────────────────────────────────
+
+    public function test_first_session_becomes_current_automatically(): void
+    {
+        $this->act()->postJson('/api/exam-officer/academic-calendar/sessions', ['session' => '2024/2025'])
+            ->assertCreated()
+            ->assertJsonPath('data.is_current', true);
+
+        $this->assertDatabaseHas('academic_sessions', [
+            'school_id' => $this->school->id, 'session' => '2024/2025', 'is_current' => true,
+        ]);
+    }
+
+    public function test_setting_current_session_unsets_the_previous_one(): void
+    {
+        $old = \App\Models\AcademicSession::factory()->current()->create(['school_id' => $this->school->id, 'session' => '2023/2024']);
+        $new = \App\Models\AcademicSession::factory()->create(['school_id' => $this->school->id, 'session' => '2024/2025']);
+
+        $this->act()->postJson("/api/exam-officer/academic-calendar/sessions/{$new->id}/set-current")
+            ->assertOk();
+
+        $this->assertFalse($old->fresh()->is_current);
+        $this->assertTrue($new->fresh()->is_current);
+    }
+
+    public function test_can_set_current_semester(): void
+    {
+        $this->act()->putJson('/api/exam-officer/academic-calendar/semester', ['semester' => 'second'])
+            ->assertOk()
+            ->assertJsonPath('current_semester', 'second');
+
+        $this->assertEquals('second', $this->school->fresh()->current_semester->value);
+    }
+
+    // ── Department officers ───────────────────────────────────────────────────
+
+    public function test_can_create_department_officer(): void
     {
         $dept = Department::factory()->create(['school_id' => $this->school->id]);
 
-        $this->act()->postJson('/api/exam-officer/courses', [
+        $this->act()->postJson('/api/exam-officer/department-officers', [
+            'file_number'   => 'DEO/0001',
+            'name'          => 'Mr. Sani',
             'department_id' => $dept->id,
-            'title'         => 'Introduction to Computing',
-            'code'          => 'CSC101',
-            'credit_units'  => 3,
-            'level'         => StudentLevel::Nce100->value,
-            'semester'      => 'first',
         ])
             ->assertCreated()
-            ->assertJsonPath('data.code', 'CSC101');
+            ->assertJsonStructure(['user', 'temp_password']);
+
+        $this->assertDatabaseHas('users', [
+            'file_number'   => 'DEO/0001',
+            'role'          => UserRole::DepartmentExamOfficer->value,
+            'department_id' => $dept->id,
+        ]);
     }
 
-    public function test_cannot_delete_course_with_assigned_lecturer(): void
+    public function test_can_promote_lecturer_to_department_officer(): void
     {
         $dept     = Department::factory()->create(['school_id' => $this->school->id]);
-        $course   = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $dept->id]);
         $lecturer = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $this->school->id]);
-        $course->lecturers()->attach($lecturer->id, ['session' => '2024/2025', 'semester' => 'first']);
 
-        $this->act()->deleteJson("/api/exam-officer/courses/{$course->id}")
+        $this->act()->postJson("/api/exam-officer/department-officers/{$lecturer->id}/promote", [
+            'department_id' => $dept->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.role', UserRole::DepartmentExamOfficer->value);
+
+        $this->assertEquals(UserRole::DepartmentExamOfficer, $lecturer->fresh()->role);
+        $this->assertEquals($dept->id, $lecturer->fresh()->department_id);
+    }
+
+    public function test_can_demote_department_officer_to_lecturer(): void
+    {
+        $dept    = Department::factory()->create(['school_id' => $this->school->id]);
+        $officer = User::factory()->role(UserRole::DepartmentExamOfficer)
+            ->create(['school_id' => $this->school->id, 'department_id' => $dept->id]);
+
+        $this->act()->postJson("/api/exam-officer/department-officers/{$officer->id}/demote")
+            ->assertOk()
+            ->assertJsonPath('data.role', UserRole::Lecturer->value);
+    }
+
+    public function test_cannot_manage_department_officer_from_another_school(): void
+    {
+        $outsider = User::factory()->role(UserRole::DepartmentExamOfficer)->create(); // other school
+
+        $this->act()->postJson("/api/exam-officer/department-officers/{$outsider->id}/demote")
+            ->assertNotFound();
+    }
+
+    // ── Combination assignment + auto-enrolment ───────────────────────────────
+
+    public function test_assigning_students_to_combination_auto_enrols_in_both_departments(): void
+    {
+        \App\Models\AcademicSession::factory()->current()->create(['school_id' => $this->school->id, 'session' => '2024/2025']);
+
+        $csc = Department::factory()->create(['school_id' => $this->school->id, 'code' => 'CSC']);
+        $mat = Department::factory()->create(['school_id' => $this->school->id, 'code' => 'MAT']);
+
+        $combination = \App\Models\Combination::factory()->create(['school_id' => $this->school->id, 'code' => 'CSC/MAT']);
+        $combination->departments()->sync([$csc->id, $mat->id]);
+
+        // One 100L course in each department, plus a 200L course that must be skipped.
+        $cscCourse = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $csc->id, 'level' => StudentLevel::Nce100->value, 'semester' => 'first']);
+        $matCourse = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $mat->id, 'level' => StudentLevel::Nce100->value, 'semester' => 'first']);
+        $other200  = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $csc->id, 'level' => StudentLevel::Nce200->value, 'semester' => 'first']);
+
+        $student = Student::factory()->create([
+            'school_id' => $this->school->id,
+            'level'     => StudentLevel::Nce100->value,
+        ]);
+
+        $this->act()->postJson("/api/exam-officer/combinations/{$combination->id}/assign-students", [
+            'student_ids' => [$student->id],
+        ])
+            ->assertOk()
+            ->assertJsonPath('enrolments_created', 2);
+
+        $this->assertEquals($combination->id, $student->fresh()->combination_id);
+        $this->assertDatabaseHas('student_courses', ['student_id' => $student->id, 'course_id' => $cscCourse->id]);
+        $this->assertDatabaseHas('student_courses', ['student_id' => $student->id, 'course_id' => $matCourse->id]);
+        $this->assertDatabaseMissing('student_courses', ['student_id' => $student->id, 'course_id' => $other200->id]);
+    }
+
+    public function test_cannot_assign_to_combination_without_a_current_session(): void
+    {
+        $csc = Department::factory()->create(['school_id' => $this->school->id]);
+        $mat = Department::factory()->create(['school_id' => $this->school->id]);
+        $combination = \App\Models\Combination::factory()->create(['school_id' => $this->school->id]);
+        $combination->departments()->sync([$csc->id, $mat->id]);
+
+        $student = Student::factory()->create(['school_id' => $this->school->id]);
+
+        $this->act()->postJson("/api/exam-officer/combinations/{$combination->id}/assign-students", [
+            'student_ids' => [$student->id],
+        ])
             ->assertUnprocessable();
-    }
-
-    // ── Assignments ───────────────────────────────────────────────────────────
-
-    public function test_can_assign_lecturer_to_course(): void
-    {
-        $dept     = Department::factory()->create(['school_id' => $this->school->id]);
-        $course   = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $dept->id]);
-        $lecturer = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $this->school->id]);
-
-        $this->act()->postJson("/api/exam-officer/courses/{$course->id}/assign-lecturer", [
-            'lecturer_id' => $lecturer->id,
-            'session'     => '2024/2025',
-            'semester'    => 'first',
-        ])
-            ->assertOk();
-
-        $this->assertDatabaseHas('lecturer_courses', [
-            'course_id'   => $course->id,
-            'lecturer_id' => $lecturer->id,
-        ]);
-    }
-
-    public function test_cannot_assign_lecturer_from_another_school(): void
-    {
-        $dept     = Department::factory()->create(['school_id' => $this->school->id]);
-        $course   = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $dept->id]);
-        $outsider = User::factory()->role(UserRole::Lecturer)->create(); // different school
-
-        $this->act()->postJson("/api/exam-officer/courses/{$course->id}/assign-lecturer", [
-            'lecturer_id' => $outsider->id,
-            'session'     => '2024/2025',
-            'semester'    => 'first',
-        ])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('lecturer_id');
-    }
-
-    public function test_can_enroll_students_in_course(): void
-    {
-        $dept     = Department::factory()->create(['school_id' => $this->school->id]);
-        $course   = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $dept->id]);
-        $students = Student::factory()->count(5)->create(['school_id' => $this->school->id, 'department_id' => $dept->id]);
-
-        $this->act()->postJson("/api/exam-officer/courses/{$course->id}/assign-students", [
-            'student_ids' => $students->pluck('id')->all(),
-            'session'     => '2024/2025',
-            'semester'    => 'first',
-        ])
-            ->assertOk();
-
-        $this->assertDatabaseHas('student_courses', [
-            'course_id'  => $course->id,
-            'student_id' => $students->first()->id,
-        ]);
-    }
-
-    public function test_can_remove_lecturer_from_course(): void
-    {
-        $dept     = Department::factory()->create(['school_id' => $this->school->id]);
-        $course   = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $dept->id]);
-        $lecturer = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $this->school->id]);
-        $course->lecturers()->attach($lecturer->id, ['session' => '2024/2025', 'semester' => 'first']);
-
-        $this->act()->deleteJson("/api/exam-officer/courses/{$course->id}/lecturers/{$lecturer->id}")
-            ->assertNoContent();
-
-        $this->assertDatabaseMissing('lecturer_courses', ['course_id' => $course->id, 'lecturer_id' => $lecturer->id]);
     }
 }

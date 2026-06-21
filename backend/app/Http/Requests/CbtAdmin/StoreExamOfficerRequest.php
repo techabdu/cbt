@@ -20,6 +20,9 @@ class StoreExamOfficerRequest extends FormRequest
             'email'       => ['nullable', 'email', 'max:255', Rule::unique('users', 'email')],
             // Schools are created by the Super Admin; the officer is scoped to one.
             'school_id'   => ['required', 'integer', Rule::exists('schools', 'id')],
+            // Optional — the officer may be attached to a department now or later.
+            'department_id' => ['nullable', 'integer',
+                Rule::exists('departments', 'id')->where('school_id', $this->input('school_id'))],
         ];
     }
 }

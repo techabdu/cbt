@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Plus, Search, MoreHorizontal, Trash2, Loader2, ClipboardList, ChevronRight, KeyRound } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Trash2, Loader2, ClipboardList, ChevronRight, KeyRound, FileUp, DownloadCloud } from "lucide-react";
 import type { AxiosError } from "axios";
 
 import { cbtExamService, type CreateExamPayload } from "@/services/cbtExam.service";
@@ -46,6 +46,26 @@ function ExamsView() {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [presetBank, setPresetBank] = React.useState<number | null>(null);
   const [deleting, setDeleting] = React.useState<Exam | null>(null);
+  const [pullOpen, setPullOpen] = React.useState(false);
+  const importPkgRef = React.useRef<HTMLInputElement>(null);
+
+  const { data: health } = useQuery({
+    queryKey: ["server-health"],
+    queryFn: () => cbtExamService.health(),
+    staleTime: 5 * 60_000,
+  });
+  const isOffline = health?.offline_server ?? false;
+
+  const importPkgMutation = useMutation({
+    mutationFn: (file: File) => cbtExamService.importPackage(file),
+    onSuccess: (res) => {
+      toast.success(res.message);
+      queryClient.invalidateQueries({ queryKey: ["exams"] });
+      queryClient.invalidateQueries({ queryKey: ["cbt-admin-stats"] });
+      if (res.exam?.id) router.push(`/dashboard/cbt-admin/exams/${res.exam.id}`);
+    },
+    onError: (err: AxiosError<{ message?: string }>) => toast.error(err.response?.data?.message ?? "Could not import the exam package."),
+  });
 
   // Open the create dialog pre-seeded when arriving from the banks page.
   React.useEffect(() => {
@@ -81,13 +101,36 @@ function ExamsView() {
     <div className="space-y-6">
       <PageHeader
         title="Exams"
-        description="Configure exams from approved question banks and generate student access codes."
+        description={isOffline
+          ? "Import exams from the online server, then students sit them on this offline server."
+          : "Configure exams from approved question banks and generate student access codes."}
         action={
-          <Button onClick={() => { setPresetBank(null); setCreateOpen(true); }}>
-            <Plus className="h-4 w-4" /> Configure Exam
-          </Button>
+          isOffline ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setPullOpen(true)}>
+                <DownloadCloud className="h-4 w-4" /> Pull from online
+              </Button>
+              <Button onClick={() => importPkgRef.current?.click()} disabled={importPkgMutation.isPending}>
+                {importPkgMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />} Import exam package
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={() => { setPresetBank(null); setCreateOpen(true); }}>
+              <Plus className="h-4 w-4" /> Configure Exam
+            </Button>
+          )
         }
       />
+
+      <input
+        ref={importPkgRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) importPkgMutation.mutate(f); e.target.value = ""; }}
+      />
+
+      <PullFromOnlineDialog open={pullOpen} onOpenChange={setPullOpen} onPulled={(id) => router.push(`/dashboard/cbt-admin/exams/${id}`)} />
 
       <Card className="p-4">
         <div className="relative mb-4 max-w-sm">
@@ -102,7 +145,7 @@ function ExamsView() {
             icon={ClipboardList}
             title={debouncedSearch ? "No matching exams" : "No exams configured"}
             description={debouncedSearch ? "Try a different search." : "Configure your first exam from an approved question bank."}
-            action={!debouncedSearch && (
+            action={!debouncedSearch && !isOffline && (
               <Button onClick={() => { setPresetBank(null); setCreateOpen(true); }}>
                 <Plus className="h-4 w-4" /> Configure Exam
               </Button>
@@ -185,6 +228,56 @@ function ExamsView() {
         onConfirm={() => deleting && deleteMutation.mutate(deleting.id)}
       />
     </div>
+  );
+}
+
+/**
+ * Offline server only: pull an exam package from the online server by its id
+ * (shown on the online server's exam page) over a brief internet connection.
+ */
+function PullFromOnlineDialog({
+  open, onOpenChange, onPulled,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onPulled: (examId: number) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [examId, setExamId] = React.useState("");
+
+  React.useEffect(() => { if (open) setExamId(""); }, [open]);
+
+  const mutation = useMutation({
+    mutationFn: () => cbtExamService.networkPull(Number(examId)),
+    onSuccess: (res) => {
+      toast.success(res.message);
+      queryClient.invalidateQueries({ queryKey: ["exams"] });
+      onOpenChange(false);
+      if (res.exam?.id) onPulled(res.exam.id);
+    },
+    onError: (err: AxiosError<{ message?: string }>) => toast.error(err.response?.data?.message ?? "Pull failed — could not reach the online server."),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Pull exam from online</DialogTitle>
+          <DialogDescription>Enter the exam ID (shown on the online server&apos;s exam page). This server must be briefly online and have ONLINE_SERVER_URL configured.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="pull_id">Exam ID <span className="text-red-500">*</span></Label>
+          <Input id="pull_id" type="number" min={1} placeholder="e.g. 12" value={examId} onChange={(e) => setExamId(e.target.value)} />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button disabled={!examId || mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Pull Exam
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -21,6 +21,7 @@ class User extends Authenticatable
         'password',
         'role',
         'school_id',
+        'department_id',
         'is_active',
         'force_password_change',
         'last_login_at',
@@ -46,6 +47,11 @@ class User extends Authenticatable
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
     }
 
     public function lecturerCourses(): HasMany

@@ -1,6 +1,6 @@
 import { api } from "@/lib/api";
 import type { AuthUser } from "@/types/auth.types";
-import type { School } from "@/types/user.types";
+import type { School, Department } from "@/types/user.types";
 import type { ListParams, Paginated } from "@/types/common.types";
 
 export interface CreateExamOfficerPayload {
@@ -8,12 +8,15 @@ export interface CreateExamOfficerPayload {
   name: string;
   email: string | null;
   school_id: number;
+  // Optional — attach to a department now or later.
+  department_id?: number | null;
 }
 
 export interface UpdateExamOfficerPayload {
   name: string;
   email: string | null;
   is_active: boolean;
+  department_id?: number | null;
 }
 
 export interface TempPasswordResult {
@@ -49,5 +52,12 @@ export const examOfficerAdminService = {
 
   schools(): Promise<School[]> {
     return api.get<{ data: School[] }>("/cbt-admin/schools").then((r) => r.data.data);
+  },
+
+  // Departments of a school — for the optional "attach to department" selector.
+  departments(schoolId: number): Promise<Department[]> {
+    return api
+      .get<{ data: Department[] }>("/cbt-admin/departments", { params: { "filter[school_id]": schoolId, per_page: 100 } })
+      .then((r) => r.data.data);
   },
 };

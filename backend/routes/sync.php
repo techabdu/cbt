@@ -25,4 +25,9 @@ Route::prefix('sync')->middleware('sync.secret')->group(function (): void {
 
     // Phase 9 — Online pulls results from offline
     Route::get('/results/{exam}', [\App\Http\Controllers\Sync\ResultsPullController::class, 'show']);
+
+    // Reverse direction (cloud-online + isolated-offline): the offline server,
+    // when briefly online, pulls an exam package and pushes results back itself.
+    Route::get('/exam-package/{exam}', [\App\Http\Controllers\Sync\NetworkController::class, 'examPackage']);
+    Route::post('/receive-results/{exam}', [\App\Http\Controllers\Sync\NetworkController::class, 'receiveResults']);
 });

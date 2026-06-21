@@ -10,6 +10,7 @@ import { format } from "date-fns";
 import {
   ArrowLeft, KeyRound, Loader2, AlertCircle, Search, Users, CheckCircle2,
   Calendar, Clock, Timer, BookOpen, UploadCloud, DownloadCloud,
+  FileDown, FileUp, Send, ArrowLeftRight,
 } from "lucide-react";
 import type { AxiosError } from "axios";
 
@@ -148,6 +149,14 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
         </Card>
       )}
 
+      <OfflineExchangeCard
+        examId={examId}
+        onChanged={() => {
+          queryClient.invalidateQueries({ queryKey: ["exam", examId] });
+          queryClient.invalidateQueries({ queryKey: ["exams"] });
+        }}
+      />
+
       {/* Schedule summary */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <SummaryTile icon={Calendar} label="Date" value={format(new Date(exam.exam_date), "dd MMM yyyy")} />
@@ -230,6 +239,100 @@ function SummaryTile({ icon: Icon, label, value }: { icon: React.ComponentType<{
       <CardContent className="py-4">
         <div className="flex items-center gap-2 text-slate-400"><Icon className="h-4 w-4" /><span className="text-xs uppercase tracking-wide">{label}</span></div>
         <p className="mt-1 text-lg font-semibold">{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Move exam data between a cloud-online server and an isolated exam-hall server.
+ * The actions shown depend on which server this is (from /health): the online
+ * server exports the exam package and imports results; the offline server
+ * exports results and (when briefly online) pushes them back.
+ */
+function OfflineExchangeCard({ examId, onChanged }: { examId: number; onChanged: () => void }) {
+  const resultsFileRef = React.useRef<HTMLInputElement>(null);
+
+  const { data: health } = useQuery({
+    queryKey: ["server-health"],
+    queryFn: () => cbtExamService.health(),
+    staleTime: 5 * 60_000,
+  });
+  const isOffline = health?.offline_server ?? false;
+
+  const exportPkg = useMutation({
+    mutationFn: () => cbtExamService.exportPackage(examId),
+    onSuccess: ({ blob, filename }) => { triggerDownload(blob, filename); toast.success("Exam package downloaded."); onChanged(); },
+    onError: () => toast.error("Could not export — make sure exam codes have been generated."),
+  });
+
+  const exportRes = useMutation({
+    mutationFn: () => cbtExamService.exportResults(examId),
+    onSuccess: ({ blob, filename }) => { triggerDownload(blob, filename); toast.success("Results downloaded."); },
+    onError: () => toast.error("Could not export results."),
+  });
+
+  const importRes = useMutation({
+    mutationFn: (file: File) => cbtExamService.importResults(examId, file),
+    onSuccess: (res) => { toast.success(res.message); onChanged(); },
+    onError: (err: AxiosError<{ message?: string }>) => toast.error(err.response?.data?.message ?? "Could not import results."),
+  });
+
+  const pushRes = useMutation({
+    mutationFn: () => cbtExamService.networkPushResults(examId),
+    onSuccess: (res) => { toast.success(res.message); onChanged(); },
+    onError: (err: AxiosError<{ message?: string }>) => toast.error(err.response?.data?.message ?? "Push failed — could not reach the online server."),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center justify-between">
+          <span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4 text-slate-400" /> Offline Exchange</span>
+          <Badge variant="secondary">{isOffline ? "This is the OFFLINE server" : "This is the ONLINE server"}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          For a cloud-hosted online server with an isolated exam-hall server, move exam data by <strong>file</strong> (download here, carry on a USB drive, upload on the other server) or, if this server is briefly online, over the <strong>network</strong>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {!isOffline ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => exportPkg.mutate()} disabled={exportPkg.isPending}>
+                {exportPkg.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} Export exam package
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => resultsFileRef.current?.click()} disabled={importRes.isPending}>
+                {importRes.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />} Import results (file)
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={() => exportRes.mutate()} disabled={exportRes.isPending}>
+                {exportRes.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} Export results (file)
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => pushRes.mutate()} disabled={pushRes.isPending}>
+                {pushRes.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Push results to online
+              </Button>
+            </>
+          )}
+        </div>
+        <input
+          ref={resultsFileRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) importRes.mutate(f); e.target.value = ""; }}
+        />
       </CardContent>
     </Card>
   );

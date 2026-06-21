@@ -1,4 +1,5 @@
 import type { Role } from "@/types/common.types";
+import type { Department } from "@/types/user.types";
 
 export interface AuthUser {
   id: number;
@@ -7,6 +8,8 @@ export interface AuthUser {
   email: string | null;
   role: Role;
   school_id: number | null;
+  department_id?: number | null;
+  department?: Department | null;
   is_active: boolean;
   force_password_change: boolean;
   last_login_at: string | null;

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\ExamOfficer;
 use App\Enums\QuestionBankStatus;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Models\Combination;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\QuestionBank;
@@ -23,9 +24,13 @@ class DashboardController extends Controller
             'lecturers'          => User::where('school_id', $schoolId)
                 ->where('role', UserRole::Lecturer->value)
                 ->count(),
+            'department_officers' => User::where('school_id', $schoolId)
+                ->where('role', UserRole::DepartmentExamOfficer->value)
+                ->count(),
             'students'           => Student::where('school_id', $schoolId)->count(),
             'courses'            => Course::where('school_id', $schoolId)->count(),
             'departments'        => Department::where('school_id', $schoolId)->count(),
+            'combinations'       => Combination::where('school_id', $schoolId)->count(),
             'pending_moderation' => QuestionBank::whereHas('course', fn ($q) => $q->where('school_id', $schoolId))
                 ->whereIn('status', [
                     QuestionBankStatus::Submitted->value,

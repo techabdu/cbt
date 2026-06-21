@@ -11,6 +11,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   super_admin: "Super Admin",
   cbt_admin: "CBT Admin",
   exam_officer: "School Exam Officer",
+  department_exam_officer: "Department Exam Officer",
   lecturer: "Lecturer",
 };
 
@@ -19,6 +20,7 @@ export const ROLE_HOME: Record<Role, string> = {
   super_admin: "/dashboard/super-admin",
   cbt_admin: "/dashboard/cbt-admin",
   exam_officer: "/dashboard/exam-officer",
+  department_exam_officer: "/dashboard/department-officer",
   lecturer: "/dashboard/lecturer",
 };
 

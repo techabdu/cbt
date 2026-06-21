@@ -20,9 +20,13 @@ class StoreStudentRequest extends FormRequest
         return [
             'matric_number' => ['required', 'string', 'max:50', Rule::unique('students', 'matric_number')],
             'full_name'     => ['required', 'string', 'max:255'],
-            'department_id' => ['required', 'integer',
-                Rule::exists('departments', 'id')->where('school_id', $schoolId)],
             'level'         => ['required', Rule::enum(StudentLevel::class)],
+            // The canonical program link — may be assigned now or later.
+            'combination_id' => ['nullable', 'integer',
+                Rule::exists('combinations', 'id')->where('school_id', $schoolId)],
+            // Optional "home/registering" department.
+            'department_id' => ['nullable', 'integer',
+                Rule::exists('departments', 'id')->where('school_id', $schoolId)],
         ];
     }
 }

@@ -14,10 +14,15 @@ class UpdateExamOfficerRequest extends FormRequest
 
     public function rules(): array
     {
+        $officer   = $this->route('exam_officer');
+        $schoolId  = $officer?->school_id;
+
         return [
             'name'      => ['required', 'string', 'max:255'],
-            'email'     => ['nullable', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->route('exam_officer'))],
+            'email'     => ['nullable', 'email', 'max:255', Rule::unique('users', 'email')->ignore($officer)],
             'is_active' => ['required', 'boolean'],
+            'department_id' => ['nullable', 'integer',
+                Rule::exists('departments', 'id')->where('school_id', $schoolId)],
         ];
     }
 }

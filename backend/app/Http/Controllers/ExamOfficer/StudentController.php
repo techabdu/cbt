@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ExamOfficer\StoreStudentRequest;
 use App\Http\Requests\ExamOfficer\UpdateStudentRequest;
 use App\Http\Resources\StudentResource;
+use App\Models\Combination;
 use App\Models\Student;
 use App\Services\AuditLogService;
+use App\Services\CombinationEnrollmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Spatie\QueryBuilder\AllowedFilter;
@@ -15,7 +17,10 @@ use Spatie\QueryBuilder\QueryBuilder;
 
 class StudentController extends Controller
 {
-    public function __construct(private readonly AuditLogService $auditLog) {}
+    public function __construct(
+        private readonly AuditLogService $auditLog,
+        private readonly CombinationEnrollmentService $enrollment,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -23,13 +28,18 @@ class StudentController extends Controller
 
         $students = QueryBuilder::for(Student::class)
             ->where('school_id', $schoolId)
-            ->with('department')
+            ->with(['department', 'combination'])
             ->allowedFilters(
                 AllowedFilter::callback('search', fn ($q, $v) => $q->where(
                     fn ($q) => $q->where('full_name', 'like', "%{$v}%")
                                ->orWhere('matric_number', 'like', "%{$v}%")
                 )),
                 AllowedFilter::exact('department_id'),
+                AllowedFilter::exact('combination_id'),
+                // Students not yet tied to any combination — for the assignment picker.
+                AllowedFilter::callback('unassigned', fn ($q, $v) => filter_var($v, FILTER_VALIDATE_BOOLEAN)
+                    ? $q->whereNull('combination_id')
+                    : $q),
                 AllowedFilter::exact('level'),
                 AllowedFilter::exact('is_active')
             )
@@ -57,7 +67,11 @@ class StudentController extends Controller
             ipAddress: $request->ip()
         );
 
-        $student->load('department');
+        // A combination chosen at registration auto-enrols the student into its
+        // departments' courses at their level (mirrors bulk assignment).
+        $this->enrolIfAssigned($student, (int) $schoolId);
+
+        $student->load(['department', 'combination']);
 
         return (new StudentResource($student))->response()->setStatusCode(201);
     }
@@ -65,7 +79,7 @@ class StudentController extends Controller
     public function show(Request $request, Student $student): JsonResponse
     {
         $this->guard($request, $student->school_id);
-        $student->load('department');
+        $student->load(['department', 'combination']);
 
         return (new StudentResource($student))->response();
     }
@@ -83,7 +97,9 @@ class StudentController extends Controller
             oldValues: $old, newValues: $student->fresh()->toArray(), ipAddress: $request->ip()
         );
 
-        $student->refresh()->load('department');
+        $this->enrolIfAssigned($student->fresh(), (int) $request->attributes->get('school_id'));
+
+        $student->refresh()->load(['department', 'combination']);
 
         return (new StudentResource($student))->response();
     }
@@ -109,6 +125,28 @@ class StudentController extends Controller
         $student->delete();
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * Enrol a student into their combination's courses, if they have one and the
+     * academic calendar's current session is set. Idempotent and a no-op when the
+     * student is unassigned or no session exists (enrolment is back-filled later).
+     */
+    private function enrolIfAssigned(Student $student, int $schoolId): void
+    {
+        if (! $student->combination_id) {
+            return;
+        }
+
+        $session = $this->enrollment->currentSession($schoolId);
+        if (! $session) {
+            return;
+        }
+
+        $combination = Combination::find($student->combination_id);
+        if ($combination) {
+            $this->enrollment->enrolStudents($combination, [$student->id], $session);
+        }
     }
 
     private function guard(Request $request, int $studentSchoolId): void

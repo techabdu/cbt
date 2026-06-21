@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureDepartmentScope;
 use App\Http\Middleware\EnsureOfflineMode;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureSchoolScope;
@@ -27,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => EnsureRole::class,
             'school.scope' => EnsureSchoolScope::class,
+            'department.scope' => EnsureDepartmentScope::class,
             'sync.secret' => SyncSecretKeyAuth::class,
             'offline.mode' => EnsureOfflineMode::class,
             'exam.session' => ResolveExamSession::class,

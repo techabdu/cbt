@@ -14,13 +14,14 @@ class RoleManagementService
     ) {}
 
     /**
-     * Promote a Lecturer to School Exam Officer. The user keeps their school.
+     * Promote a Lecturer or Department Exam Officer to School Exam Officer
+     * (CBT-Admin tier). The user keeps their school.
      */
     public function promote(User $user, User $actor, ?string $reason = null, ?string $ip = null): User
     {
-        if ($user->role !== UserRole::Lecturer) {
+        if (! in_array($user->role, [UserRole::Lecturer, UserRole::DepartmentExamOfficer], true)) {
             throw ValidationException::withMessages([
-                'role' => 'Only a lecturer can be promoted to Exam Officer.',
+                'role' => 'Only a Lecturer or Department Exam Officer can be promoted to School Exam Officer.',
             ]);
         }
 
@@ -34,13 +35,54 @@ class RoleManagementService
     }
 
     /**
-     * Demote a School Exam Officer back to Lecturer.
+     * Demote a School Exam Officer (CBT-Admin tier). They step back to Department
+     * Exam Officer if they retain a department, otherwise to Lecturer.
      */
     public function demote(User $user, User $actor, ?string $reason = null, ?string $ip = null): User
     {
         if ($user->role !== UserRole::ExamOfficer) {
             throw ValidationException::withMessages([
-                'role' => 'Only an Exam Officer can be demoted to Lecturer.',
+                'role' => 'Only an Exam Officer can be demoted here.',
+            ]);
+        }
+
+        $target = $user->department_id ? UserRole::DepartmentExamOfficer : UserRole::Lecturer;
+
+        return $this->applyChange($user, $target, $actor, $reason, $ip);
+    }
+
+    /**
+     * Promote a Lecturer to Department Exam Officer of the given department
+     * (School-Officer tier). The department is recorded on the user.
+     */
+    public function promoteToDepartmentOfficer(User $user, int $departmentId, User $actor, ?string $reason = null, ?string $ip = null): User
+    {
+        if ($user->role !== UserRole::Lecturer) {
+            throw ValidationException::withMessages([
+                'role' => 'Only a Lecturer can be promoted to Department Exam Officer.',
+            ]);
+        }
+
+        if (! $user->school_id) {
+            throw ValidationException::withMessages([
+                'role' => 'This user is not attached to a school.',
+            ]);
+        }
+
+        $user->update(['department_id' => $departmentId]);
+
+        return $this->applyChange($user, UserRole::DepartmentExamOfficer, $actor, $reason, $ip);
+    }
+
+    /**
+     * Demote a Department Exam Officer back to Lecturer (School-Officer tier).
+     * They keep their department attachment.
+     */
+    public function demoteFromDepartmentOfficer(User $user, User $actor, ?string $reason = null, ?string $ip = null): User
+    {
+        if ($user->role !== UserRole::DepartmentExamOfficer) {
+            throw ValidationException::withMessages([
+                'role' => 'Only a Department Exam Officer can be demoted to Lecturer.',
             ]);
         }
 
