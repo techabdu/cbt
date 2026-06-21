@@ -43,4 +43,20 @@ enum UserRole: string
     {
         return $this->rank() >= $required->rank();
     }
+
+    /**
+     * Roles whose holders are lecturers (possibly with an officer privilege on
+     * top) and can therefore be assigned to teach a course. Officers keep their
+     * lecturer abilities, so they belong in the assignable pool too.
+     *
+     * @return array<int, string>
+     */
+    public static function teaching(): array
+    {
+        return [
+            self::Lecturer->value,
+            self::DepartmentExamOfficer->value,
+            self::ExamOfficer->value,
+        ];
+    }
 }

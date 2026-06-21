@@ -217,22 +217,23 @@ function AssignLecturerDialog({
   onAssigned: () => void;
 }) {
   const [lecturerId, setLecturerId] = React.useState("");
-  const [session, setSession] = React.useState("");
-  const [semester, setSemester] = React.useState("");
 
-  const { data: lecturerData } = useQuery({
-    queryKey: ["dept-lecturers", "all"],
-    queryFn: () => deptOfficerService.listLecturers({ per_page: 100 }),
+  const { data: calendar } = useQuery({
+    queryKey: ["dept-current-calendar"],
+    queryFn: () => deptOfficerService.currentCalendar(),
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const { data: staffData } = useQuery({
+    queryKey: ["dept-assignable-staff"],
+    queryFn: () => deptOfficerService.assignableStaff({ per_page: 100 }),
     enabled: open,
     staleTime: 30_000,
   });
 
   const mutation = useMutation({
-    mutationFn: () => deptOfficerService.assignLecturer(courseId, {
-      lecturer_id: Number(lecturerId),
-      session,
-      semester,
-    }),
+    mutationFn: () => deptOfficerService.assignLecturer(courseId, Number(lecturerId)),
     onSuccess: () => {
       toast.success("Lecturer assigned");
       onAssigned();
@@ -244,18 +245,21 @@ function AssignLecturerDialog({
   });
 
   React.useEffect(() => {
-    if (open) { setLecturerId(""); setSession(""); setSemester(""); }
+    if (open) setLecturerId("");
   }, [open]);
 
-  const canSubmit = lecturerId && session && semester;
-  const lecturers = lecturerData?.data ?? [];
+  const staff = staffData?.data ?? [];
+  const calendarSet = !!(calendar?.current_session && calendar?.current_semester);
+  const canSubmit = !!lecturerId && calendarSet;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Assign Lecturer</DialogTitle>
-          <DialogDescription>Select a lecturer and specify the session/semester for this assignment.</DialogDescription>
+          <DialogDescription>
+            The session and semester follow the school&apos;s academic calendar.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -267,28 +271,32 @@ function AssignLecturerDialog({
               onChange={(e) => setLecturerId(e.target.value)}
             >
               <option value="">Select lecturer…</option>
-              {lecturers.map((l: StaffUser) => (
-                <option key={l.id} value={l.id}>{l.name} ({l.file_number})</option>
+              {staff.map((l: StaffUser) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} ({l.file_number}){l.role !== "lecturer" ? ` — ${l.role_label ?? "Officer"}` : ""}
+                </option>
               ))}
             </select>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="al_session">Session <span className="text-red-500">*</span></Label>
-            <Input id="al_session" placeholder="e.g. 2024/2025" value={session} onChange={(e) => setSession(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Session</Label>
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900">
+                {calendar?.current_session ?? "—"}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Semester</Label>
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900">
+                {calendar?.current_semester ? SEMESTER_LABELS[calendar.current_semester] : "—"}
+              </div>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="al_semester">Semester <span className="text-red-500">*</span></Label>
-            <select
-              id="al_semester"
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-              value={semester}
-              onChange={(e) => setSemester(e.target.value)}
-            >
-              <option value="">Select semester…</option>
-              <option value="first">First Semester</option>
-              <option value="second">Second Semester</option>
-            </select>
-          </div>
+          {!calendarSet && (
+            <p className="text-sm text-amber-600">
+              The academic calendar isn&apos;t set yet — ask the School Exam Officer to set the current session and semester before assigning.
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

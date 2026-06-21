@@ -299,6 +299,26 @@ class LecturerTest extends TestCase
         $this->assertNotNull($bank->fresh()->submitted_at);
     }
 
+    public function test_submitting_a_bank_notifies_the_school_exam_officer(): void
+    {
+        $officer = User::factory()->role(UserRole::ExamOfficer)->create(['school_id' => $this->school->id]);
+
+        $bank = $this->createBank();
+        $this->act()->postJson("/api/lecturer/question-banks/{$bank->id}/questions", [
+            'question_text' => 'Q?',
+            'question_type' => 'fill_blank',
+            'marks'         => 1,
+            'answers'       => ['x'],
+        ]);
+
+        $this->act()->postJson("/api/lecturer/question-banks/{$bank->id}/submit")->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $officer->id,
+            'type'          => \App\Notifications\QuestionBankSubmittedForModeration::class,
+        ]);
+    }
+
     public function test_cannot_edit_submitted_bank(): void
     {
         $bank = $this->createBank();

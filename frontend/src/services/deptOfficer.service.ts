@@ -1,11 +1,16 @@
 import { api } from "@/lib/api";
-import type { Paginated } from "@/types/common.types";
+import type { Paginated, Semester } from "@/types/common.types";
 import type { Course } from "@/types/course.types";
 import type { Student } from "@/types/student.types";
 import type { StaffUser } from "@/types/user.types";
 import type { DeptCourseInput, LecturerInput } from "@/lib/validators";
 
 type Params = Record<string, string | number | undefined>;
+
+export interface DeptCalendar {
+  current_session: string | null;
+  current_semester: Semester | null;
+}
 
 export interface DeptOfficerStats {
   lecturers: number;
@@ -37,6 +42,10 @@ export interface LecturerActivity extends StaffUser {
 export const deptOfficerService = {
   stats: (): Promise<DeptOfficerStats> =>
     api.get("/department-officer/stats").then((r) => r.data),
+
+  // The school's active session + semester (read-only) for course assignment.
+  currentCalendar: (): Promise<DeptCalendar> =>
+    api.get("/department-officer/current-calendar").then((r) => r.data),
 
   // Courses
   listCourses: (params?: Params): Promise<Paginated<CourseWithCounts>> =>
@@ -71,8 +80,13 @@ export const deptOfficerService = {
   courseLecturers: (courseId: number): Promise<{ data: StaffUser[] }> =>
     api.get(`/department-officer/courses/${courseId}/lecturers`).then((r) => r.data),
 
-  assignLecturer: (courseId: number, data: { lecturer_id: number; session: string; semester: string }): Promise<{ message: string }> =>
-    api.post(`/department-officer/courses/${courseId}/assign-lecturer`, data).then((r) => r.data),
+  // Session + semester are derived server-side from the academic calendar.
+  assignLecturer: (courseId: number, lecturerId: number): Promise<{ message: string }> =>
+    api.post(`/department-officer/courses/${courseId}/assign-lecturer`, { lecturer_id: lecturerId }).then((r) => r.data),
+
+  // Staff assignable to this department's courses (lecturers + officers).
+  assignableStaff: (params?: Params): Promise<Paginated<StaffUser>> =>
+    api.get("/department-officer/assignable-staff", { params }).then((r) => r.data),
 
   removeLecturer: (courseId: number, lecturerId: number): Promise<void> =>
     api.delete(`/department-officer/courses/${courseId}/lecturers/${lecturerId}`).then(() => undefined),

@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests\DepartmentOfficer;
 
-use App\Enums\Semester;
 use App\Enums\UserRole;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -19,13 +18,13 @@ class AssignLecturerRequest extends FormRequest
         $departmentId = $this->attributes->get('department_id');
 
         return [
-            // A lecturer can only be assigned to courses in their own department.
+            // Any teaching staff in this department — a plain lecturer or an
+            // officer (who is also a lecturer) attached to it. Session and
+            // semester are derived from the academic calendar server-side.
             'lecturer_id' => ['required', 'integer',
                 Rule::exists('users', 'id')
                     ->where('department_id', $departmentId)
-                    ->where('role', UserRole::Lecturer->value)],
-            'session'     => ['required', 'string', 'regex:/^\d{4}\/\d{4}$/'],
-            'semester'    => ['required', Rule::enum(Semester::class)],
+                    ->whereIn('role', UserRole::teaching())],
         ];
     }
 }

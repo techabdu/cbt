@@ -4,10 +4,13 @@ namespace App\Services;
 
 use App\Enums\QuestionBankStatus;
 use App\Enums\QuestionType;
+use App\Enums\UserRole;
 use App\Models\Question;
 use App\Models\QuestionBank;
 use App\Models\User;
+use App\Notifications\QuestionBankSubmittedForModeration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
 
 class QuestionBankService
@@ -148,6 +151,17 @@ class QuestionBankService
 
         $this->auditLog->log('question_bank_submitted', $actor ?? $bank->lecturer,
             QuestionBank::class, $bank->id, ipAddress: $ip);
+
+        // Tell the school's exam officer(s) there is something to moderate.
+        $schoolId = $bank->lecturer?->school_id;
+        if ($schoolId) {
+            $officers = User::where('role', UserRole::ExamOfficer->value)
+                ->where('school_id', $schoolId)
+                ->where('is_active', true)
+                ->get();
+
+            Notification::send($officers, new QuestionBankSubmittedForModeration($bank));
+        }
 
         return $bank;
     }

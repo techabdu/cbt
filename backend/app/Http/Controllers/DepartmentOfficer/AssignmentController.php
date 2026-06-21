@@ -2,20 +2,24 @@
 
 namespace App\Http\Controllers\DepartmentOfficer;
 
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DepartmentOfficer\AssignLecturerRequest;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\UserResource;
 use App\Models\Course;
+use App\Models\School;
 use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\CombinationEnrollmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AssignmentController extends Controller
 {
-    public function __construct(private readonly AuditLogService $auditLog) {}
+    public function __construct(
+        private readonly AuditLogService $auditLog,
+        private readonly CombinationEnrollmentService $enrollment,
+    ) {}
 
     public function courseLecturers(Request $request, Course $course): JsonResponse
     {
@@ -28,9 +32,20 @@ class AssignmentController extends Controller
     {
         $this->guardCourse($request, $course);
 
+        $schoolId = (int) $request->attributes->get('school_id');
+
+        // Session and semester follow the school's academic calendar so the whole
+        // school stays consistent — the officer never picks them by hand.
+        $session  = $this->enrollment->currentSession($schoolId);
+        $semester = School::find($schoolId)?->current_semester?->value;
+
+        if (! $session || ! $semester) {
+            return response()->json([
+                'message' => 'Set the academic calendar (current session and semester) before assigning lecturers.',
+            ], 422);
+        }
+
         $lecturerId = $request->validated('lecturer_id');
-        $session    = $request->validated('session');
-        $semester   = $request->validated('semester');
 
         $course->lecturers()->syncWithoutDetaching([
             $lecturerId => ['session' => $session, 'semester' => $semester],
@@ -50,10 +65,8 @@ class AssignmentController extends Controller
     {
         $this->guardCourse($request, $course);
 
-        if ($lecturer->role !== UserRole::Lecturer) {
-            abort(404);
-        }
-
+        // The course is already department-scoped; any assigned teaching user
+        // (a plain lecturer or an officer-who-teaches) may be unassigned.
         $course->lecturers()->detach($lecturer->id);
 
         $this->auditLog->log(

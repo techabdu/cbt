@@ -124,29 +124,85 @@ class DepartmentOfficerTest extends TestCase
 
     public function test_can_assign_lecturer_to_course(): void
     {
+        AcademicSession::factory()->current()->create(['school_id' => $this->school->id, 'session' => '2024/2025']);
+        $this->school->update(['current_semester' => 'first']);
+
+        $course   = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $this->dept->id]);
+        $lecturer = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $this->school->id, 'department_id' => $this->dept->id]);
+
+        // Session/semester are derived from the academic calendar, not the body.
+        $this->act()->postJson("/api/department-officer/courses/{$course->id}/assign-lecturer", [
+            'lecturer_id' => $lecturer->id,
+        ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('lecturer_courses', [
+            'course_id'   => $course->id,
+            'lecturer_id' => $lecturer->id,
+            'session'     => '2024/2025',
+            'semester'    => 'first',
+        ]);
+    }
+
+    public function test_assigning_without_academic_calendar_returns_422(): void
+    {
         $course   = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $this->dept->id]);
         $lecturer = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $this->school->id, 'department_id' => $this->dept->id]);
 
         $this->act()->postJson("/api/department-officer/courses/{$course->id}/assign-lecturer", [
             'lecturer_id' => $lecturer->id,
-            'session'     => '2024/2025',
-            'semester'    => 'first',
-        ])
-            ->assertOk();
+        ])->assertStatus(422);
 
-        $this->assertDatabaseHas('lecturer_courses', ['course_id' => $course->id, 'lecturer_id' => $lecturer->id]);
+        $this->assertDatabaseMissing('lecturer_courses', ['course_id' => $course->id, 'lecturer_id' => $lecturer->id]);
+    }
+
+    public function test_can_assign_an_officer_who_teaches_to_a_course(): void
+    {
+        AcademicSession::factory()->current()->create(['school_id' => $this->school->id, 'session' => '2024/2025']);
+        $this->school->update(['current_semester' => 'first']);
+
+        $course = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $this->dept->id]);
+
+        // An officer is a lecturer-with-privilege and may be assigned to teach.
+        $this->act()->postJson("/api/department-officer/courses/{$course->id}/assign-lecturer", [
+            'lecturer_id' => $this->officer->id,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('lecturer_courses', ['course_id' => $course->id, 'lecturer_id' => $this->officer->id]);
+    }
+
+    public function test_assignable_staff_includes_lecturers_and_officers(): void
+    {
+        $lecturer = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $this->school->id, 'department_id' => $this->dept->id]);
+
+        $ids = collect($this->act()->getJson('/api/department-officer/assignable-staff')->assertOk()->json('data'))
+            ->pluck('id');
+
+        $this->assertTrue($ids->contains($lecturer->id));
+        $this->assertTrue($ids->contains($this->officer->id));
+    }
+
+    public function test_current_calendar_endpoint_returns_session_and_semester(): void
+    {
+        AcademicSession::factory()->current()->create(['school_id' => $this->school->id, 'session' => '2024/2025']);
+        $this->school->update(['current_semester' => 'second']);
+
+        $this->act()->getJson('/api/department-officer/current-calendar')
+            ->assertOk()
+            ->assertJson(['current_session' => '2024/2025', 'current_semester' => 'second']);
     }
 
     public function test_cannot_assign_lecturer_from_another_department(): void
     {
+        AcademicSession::factory()->current()->create(['school_id' => $this->school->id, 'session' => '2024/2025']);
+        $this->school->update(['current_semester' => 'first']);
+
         $otherDept = Department::factory()->create(['school_id' => $this->school->id]);
         $course    = Course::factory()->create(['school_id' => $this->school->id, 'department_id' => $this->dept->id]);
         $outsider  = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $this->school->id, 'department_id' => $otherDept->id]);
 
         $this->act()->postJson("/api/department-officer/courses/{$course->id}/assign-lecturer", [
             'lecturer_id' => $outsider->id,
-            'session'     => '2024/2025',
-            'semester'    => 'first',
         ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('lecturer_id');

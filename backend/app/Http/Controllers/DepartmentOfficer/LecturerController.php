@@ -46,6 +46,34 @@ class LecturerController extends Controller
         return UserResource::collection($lecturers)->response();
     }
 
+    /**
+     * The pool of staff assignable to this department's courses: its lecturers
+     * plus any officer (department or school) attached to the department, since
+     * officers are lecturers-with-privilege and can teach too.
+     */
+    public function assignable(Request $request): JsonResponse
+    {
+        $schoolId = $request->attributes->get('school_id');
+        $deptId   = $request->attributes->get('department_id');
+
+        $staff = QueryBuilder::for(User::class)
+            ->where('school_id', $schoolId)
+            ->where('department_id', $deptId)
+            ->whereIn('role', UserRole::teaching())
+            ->where('is_active', true)
+            ->allowedFilters(
+                AllowedFilter::callback('search', fn ($q, $v) => $q->where(
+                    fn ($q) => $q->where('name', 'like', "%{$v}%")
+                               ->orWhere('file_number', 'like', "%{$v}%")
+                ))
+            )
+            ->defaultSort('name')
+            ->paginate($request->integer('per_page', 100))
+            ->withQueryString();
+
+        return UserResource::collection($staff)->response();
+    }
+
     public function store(StoreLecturerRequest $request): JsonResponse
     {
         $schoolId = $request->attributes->get('school_id');

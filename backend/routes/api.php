@@ -89,7 +89,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
         Route::prefix('department-officer')->middleware(['role:department_exam_officer', 'department.scope'])->group(function (): void {
             Route::get('/stats', [\App\Http\Controllers\DepartmentOfficer\DashboardController::class, 'stats']);
 
+            // The school's active session + semester (read-only) — course
+            // assignments follow it instead of being typed by hand.
+            Route::get('/current-calendar', [\App\Http\Controllers\DepartmentOfficer\DashboardController::class, 'currentCalendar']);
+
             Route::apiResource('courses', \App\Http\Controllers\DepartmentOfficer\CourseController::class);
+
+            // Staff assignable to this department's courses (lecturers + officers).
+            Route::get('/assignable-staff', [\App\Http\Controllers\DepartmentOfficer\LecturerController::class, 'assignable']);
 
             Route::apiResource('lecturers', \App\Http\Controllers\DepartmentOfficer\LecturerController::class)
                 ->except(['show']);

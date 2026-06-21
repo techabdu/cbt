@@ -7,13 +7,31 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\QuestionBank;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\CombinationEnrollmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
+    public function __construct(private readonly CombinationEnrollmentService $enrollment) {}
+
+    /**
+     * The school's active session + semester, read-only — so course assignments
+     * can follow the calendar the School Exam Officer sets.
+     */
+    public function currentCalendar(Request $request): JsonResponse
+    {
+        $schoolId = (int) $request->attributes->get('school_id');
+
+        return response()->json([
+            'current_session'  => $this->enrollment->currentSession($schoolId),
+            'current_semester' => School::find($schoolId)?->current_semester?->value,
+        ]);
+    }
+
     public function stats(Request $request): JsonResponse
     {
         $schoolId = $request->attributes->get('school_id');

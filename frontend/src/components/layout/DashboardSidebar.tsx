@@ -36,52 +36,83 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
+interface NavSection {
+  title?: string;
+  items: NavItem[];
+}
+
+/**
+ * Officers are lecturers-with-privilege, so they get their administration nav
+ * plus this Teaching group, which reuses the ordinary lecturer pages.
+ */
+const TEACHING_SECTION: NavSection = {
+  title: "Teaching",
+  items: [
+    { label: "My Question Banks", href: "/dashboard/lecturer/question-banks", icon: BookOpen },
+    { label: "My Courses",        href: "/dashboard/lecturer/courses",         icon: ClipboardList },
+    { label: "My Students",       href: "/dashboard/lecturer/students",        icon: GraduationCap },
+    { label: "My Results",        href: "/dashboard/lecturer/results",         icon: BarChart3 },
+  ],
+};
+
 interface DashboardSidebarProps {
   open?: boolean;
   onClose?: () => void;
 }
 
-const NAV_ITEMS: Record<Role, NavItem[]> = {
+const NAV_ITEMS: Record<Role, NavSection[]> = {
   lecturer: [
-    { label: "Overview",       href: "/dashboard/lecturer",                   icon: LayoutDashboard },
-    { label: "Question Banks", href: "/dashboard/lecturer/question-banks",    icon: BookOpen },
-    { label: "My Courses",     href: "/dashboard/lecturer/courses",           icon: ClipboardList },
-    { label: "Students",       href: "/dashboard/lecturer/students",          icon: GraduationCap },
-    { label: "Results",        href: "/dashboard/lecturer/results",           icon: BarChart3 },
+    { items: [
+      { label: "Overview",       href: "/dashboard/lecturer",                   icon: LayoutDashboard },
+      { label: "Question Banks", href: "/dashboard/lecturer/question-banks",    icon: BookOpen },
+      { label: "My Courses",     href: "/dashboard/lecturer/courses",           icon: ClipboardList },
+      { label: "Students",       href: "/dashboard/lecturer/students",          icon: GraduationCap },
+      { label: "Results",        href: "/dashboard/lecturer/results",           icon: BarChart3 },
+    ] },
   ],
   department_exam_officer: [
-    { label: "Overview",          href: "/dashboard/department-officer",                   icon: LayoutDashboard },
-    { label: "Courses",           href: "/dashboard/department-officer/courses",           icon: ClipboardList },
-    { label: "Lecturers",         href: "/dashboard/department-officer/lecturers",          icon: Users },
-    { label: "Assignments",       href: "/dashboard/department-officer/assignments",        icon: FileText },
-    { label: "Students",          href: "/dashboard/department-officer/students",           icon: GraduationCap },
-    { label: "Lecturer Activity", href: "/dashboard/department-officer/lecturer-activity",  icon: Activity },
+    { title: "Administration", items: [
+      { label: "Overview",          href: "/dashboard/department-officer",                   icon: LayoutDashboard },
+      { label: "Courses",           href: "/dashboard/department-officer/courses",           icon: ClipboardList },
+      { label: "Lecturers",         href: "/dashboard/department-officer/lecturers",          icon: Users },
+      { label: "Assignments",       href: "/dashboard/department-officer/assignments",        icon: FileText },
+      { label: "Students",          href: "/dashboard/department-officer/students",           icon: GraduationCap },
+      { label: "Lecturer Activity", href: "/dashboard/department-officer/lecturer-activity",  icon: Activity },
+    ] },
+    TEACHING_SECTION,
   ],
   exam_officer: [
-    { label: "Overview",            href: "/dashboard/exam-officer",                      icon: LayoutDashboard },
-    { label: "Departments",         href: "/dashboard/exam-officer/departments",          icon: Building2 },
-    { label: "Combinations",        href: "/dashboard/exam-officer/combinations",         icon: Layers },
-    { label: "Students",            href: "/dashboard/exam-officer/students",             icon: GraduationCap },
-    { label: "Department Officers", href: "/dashboard/exam-officer/department-officers",  icon: UserCog },
-    { label: "Academic Calendar",   href: "/dashboard/exam-officer/academic-calendar",    icon: CalendarDays },
-    { label: "Oversight",           href: "/dashboard/exam-officer/oversight",            icon: Eye },
-    { label: "Moderation",          href: "/dashboard/exam-officer/moderation",           icon: CheckSquare },
+    { title: "Administration", items: [
+      { label: "Overview",            href: "/dashboard/exam-officer",                      icon: LayoutDashboard },
+      { label: "Departments",         href: "/dashboard/exam-officer/departments",          icon: Building2 },
+      { label: "Combinations",        href: "/dashboard/exam-officer/combinations",         icon: Layers },
+      { label: "Students",            href: "/dashboard/exam-officer/students",             icon: GraduationCap },
+      { label: "Department Officers", href: "/dashboard/exam-officer/department-officers",  icon: UserCog },
+      { label: "Academic Calendar",   href: "/dashboard/exam-officer/academic-calendar",    icon: CalendarDays },
+      { label: "Oversight",           href: "/dashboard/exam-officer/oversight",            icon: Eye },
+      { label: "Moderation",          href: "/dashboard/exam-officer/moderation",           icon: CheckSquare },
+    ] },
+    TEACHING_SECTION,
   ],
   cbt_admin: [
-    { label: "Overview",       href: "/dashboard/cbt-admin",                  icon: LayoutDashboard },
-    { label: "Exam Officers",  href: "/dashboard/cbt-admin/exam-officers",    icon: Users },
-    { label: "Exams",          href: "/dashboard/cbt-admin/exams",            icon: ClipboardList },
-    { label: "Question Banks", href: "/dashboard/cbt-admin/question-banks",   icon: BookOpen },
-    { label: "Role Management",href: "/dashboard/cbt-admin/role-management",  icon: Shield },
-    { label: "Sync Logs",      href: "/dashboard/cbt-admin/sync-logs",        icon: RefreshCw },
+    { items: [
+      { label: "Overview",       href: "/dashboard/cbt-admin",                  icon: LayoutDashboard },
+      { label: "Exam Officers",  href: "/dashboard/cbt-admin/exam-officers",    icon: Users },
+      { label: "Exams",          href: "/dashboard/cbt-admin/exams",            icon: ClipboardList },
+      { label: "Question Banks", href: "/dashboard/cbt-admin/question-banks",   icon: BookOpen },
+      { label: "Role Management",href: "/dashboard/cbt-admin/role-management",  icon: Shield },
+      { label: "Sync Logs",      href: "/dashboard/cbt-admin/sync-logs",        icon: RefreshCw },
+    ] },
   ],
   super_admin: [
-    { label: "Overview",       href: "/dashboard/super-admin",                icon: LayoutDashboard },
-    { label: "College",        href: "/dashboard/super-admin/college",        icon: Building2 },
-    { label: "Schools",        href: "/dashboard/super-admin/schools",        icon: GraduationCap },
-    { label: "CBT Admins",     href: "/dashboard/super-admin/cbt-admins",    icon: Shield },
-    { label: "Audit Logs",     href: "/dashboard/super-admin/audit-logs",    icon: FileText },
-    { label: "System Health",  href: "/dashboard/super-admin/health",        icon: Settings },
+    { items: [
+      { label: "Overview",       href: "/dashboard/super-admin",                icon: LayoutDashboard },
+      { label: "College",        href: "/dashboard/super-admin/college",        icon: Building2 },
+      { label: "Schools",        href: "/dashboard/super-admin/schools",        icon: GraduationCap },
+      { label: "CBT Admins",     href: "/dashboard/super-admin/cbt-admins",    icon: Shield },
+      { label: "Audit Logs",     href: "/dashboard/super-admin/audit-logs",    icon: FileText },
+      { label: "System Health",  href: "/dashboard/super-admin/health",        icon: Settings },
+    ] },
   ],
 };
 
@@ -100,7 +131,7 @@ export function DashboardSidebar({ open = false, onClose }: DashboardSidebarProp
 
   if (!user) return null;
 
-  const navItems = NAV_ITEMS[user.role] ?? [];
+  const navSections = NAV_ITEMS[user.role] ?? [];
   const home = ROLE_HOME[user.role];
 
   const sidebarContent = (
@@ -121,39 +152,48 @@ export function DashboardSidebar({ open = false, onClose }: DashboardSidebarProp
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3" aria-label="Main navigation">
-        <ul className="space-y-1">
-          {navItems.map((item) => {
-            const isActive =
-              item.href === home
-                ? pathname === item.href
-                : pathname.startsWith(item.href);
+        {navSections.map((section, idx) => (
+          <div key={section.title ?? idx} className={cn(idx > 0 && "mt-4")}>
+            {section.title && (
+              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                {section.title}
+              </p>
+            )}
+            <ul className="space-y-1">
+              {section.items.map((item) => {
+                const isActive =
+                  item.href === home
+                    ? pathname === item.href
+                    : pathname.startsWith(item.href);
 
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100",
-                    isActive
-                      ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                  )}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  <item.icon
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-400"
-                    )}
-                    aria-hidden="true"
-                  />
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onClose}
+                      className={cn(
+                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100",
+                        isActive
+                          ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                      )}
+                      aria-current={isActive ? "page" : undefined}
+                    >
+                      <item.icon
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-400"
+                        )}
+                        aria-hidden="true"
+                      />
+                      {item.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       {/* Logout */}
