@@ -51,7 +51,14 @@ class ResultsExportService
     private function filename(Exam $exam, string $ext): string
     {
         $code = $exam->course?->code ?? 'exam-'.$exam->id;
-        return str($code)->slug()->append('-results-'.$exam->session.'.'.$ext)->value();
+
+        // The session ("2024/2025") contains a slash, which is illegal in a
+        // Content-Disposition filename and would otherwise throw when the
+        // download response is built. Normalise it to a dash, then slugify the
+        // whole stem so the filename is safe and readable.
+        $session = str_replace('/', '-', (string) $exam->session);
+
+        return str($code.'-results-'.$session)->slug()->append('.'.$ext)->value();
     }
 }
 
