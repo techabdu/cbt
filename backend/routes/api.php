@@ -204,10 +204,20 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
             Route::post('/role-management/{user}/promote', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'promote']);
             Route::post('/role-management/{user}/demote', [\App\Http\Controllers\CbtAdmin\RoleManagementController::class, 'demote']);
 
-            // Phase 8+9 — Sync push/pull + sync activity log
+            // Phase 8+9 — Sync push/pull + sync activity log (same-LAN)
             Route::post('/exams/{exam}/sync', [\App\Http\Controllers\CbtAdmin\SyncController::class, 'push']);
             Route::post('/exams/{exam}/pull-results', [\App\Http\Controllers\CbtAdmin\SyncController::class, 'pull']);
             Route::get('/sync-logs', [\App\Http\Controllers\CbtAdmin\SyncController::class, 'logs']);
+
+            // Offline exchange for cloud-online + isolated-offline (file + network).
+            // FILE: export on one server, import on the other (carried on USB).
+            Route::get('/exams/{exam}/export-package', [\App\Http\Controllers\CbtAdmin\OfflineExchangeController::class, 'exportPackage']);
+            Route::post('/import-package', [\App\Http\Controllers\CbtAdmin\OfflineExchangeController::class, 'importPackage']);
+            Route::get('/exams/{exam}/export-results', [\App\Http\Controllers\CbtAdmin\OfflineExchangeController::class, 'exportResults']);
+            Route::post('/exams/{exam}/import-results', [\App\Http\Controllers\CbtAdmin\OfflineExchangeController::class, 'importResults']);
+            // NETWORK: run on the offline server when it is briefly online.
+            Route::post('/offline/pull-exam', [\App\Http\Controllers\CbtAdmin\OfflineExchangeController::class, 'networkPull']);
+            Route::post('/exams/{exam}/network-push-results', [\App\Http\Controllers\CbtAdmin\OfflineExchangeController::class, 'networkPushResults']);
         });
 
         /*

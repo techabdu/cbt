@@ -30,6 +30,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Online Server URL
+    |--------------------------------------------------------------------------
+    |
+    | Set on the OFFLINE server only — the cloud-hosted online server's public
+    | address. When the offline server is briefly given internet, it uses this
+    | to pull an exam package from, and push results back to, the online server
+    | (server-to-server, authenticated by the shared sync secret). Blank online.
+    |
+    */
+
+    'online_server_url' => env('ONLINE_SERVER_URL'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Sync Secret Key
     |--------------------------------------------------------------------------
     |

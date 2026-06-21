@@ -124,6 +124,25 @@ Both servers run the same code; only the environment differs.
 Server-to-server sync endpoints (`/api/sync/*`) are authenticated by the shared
 `X-Sync-Secret` header, not by user tokens.
 
+### Moving exams when the offline server has no path to the online server
+
+Same-LAN sync above assumes the online server can reach the offline server. When
+the online server is cloud-hosted and the offline server sits on an isolated
+exam-hall LAN, that's not possible — so the CBT Admin gets two extra transports
+on the exam page (and the exams list), reusing the same payload format:
+
+- **File (USB / air-gapped):** on the **online** server, *Export exam package* → a
+  `.json` file. Carry it to the exam hall and *Import exam package* on the
+  **offline** server. After the exam, *Export results* on the offline server,
+  carry it back, and *Import results* on the online server. No network needed.
+- **Network (offline briefly online):** set `ONLINE_SERVER_URL` on the offline
+  server. When it has brief internet, *Pull from online* downloads the exam, and
+  *Push results to online* uploads results — then it goes offline for the exam.
+  Uses the same `X-Sync-Secret`.
+
+The exam page auto-detects which server it is (via `/api/health`) and shows the
+relevant actions.
+
 ## Security Highlights
 
 - Sanctum tokens with an 8-hour expiry; forced password change on first login.

@@ -64,4 +64,46 @@ export const cbtExamService = {
 
   syncLogs: (params?: Record<string, string | number | undefined>): Promise<Paginated<import("@/types/sync.types").SyncLog>> =>
     api.get("/cbt-admin/sync-logs", { params }).then((r) => r.data),
+
+  // Is this instance the offline (exam-hall) server? Drives the offline-exchange UI.
+  health: (): Promise<{ status: string; offline_server: boolean }> =>
+    api.get("/health").then((r) => r.data),
+
+  // ── Offline exchange (cloud-online + isolated-offline) ─────────────────────
+  // FILE transport: download on one server, upload on the other (via USB).
+  exportPackage: (examId: number): Promise<{ blob: Blob; filename: string }> =>
+    api.get(`/cbt-admin/exams/${examId}/export-package`, { responseType: "blob" })
+      .then((r) => ({ blob: r.data as Blob, filename: filenameFrom(r.headers["content-disposition"], `exam-${examId}.json`) })),
+
+  exportResults: (examId: number): Promise<{ blob: Blob; filename: string }> =>
+    api.get(`/cbt-admin/exams/${examId}/export-results`, { responseType: "blob" })
+      .then((r) => ({ blob: r.data as Blob, filename: filenameFrom(r.headers["content-disposition"], `results-${examId}.json`) })),
+
+  importPackage: (file: File): Promise<{ message: string; exam: Exam }> => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post("/cbt-admin/import-package", form).then((r) => r.data);
+  },
+
+  importResults: (examId: number, file: File): Promise<{ message: string }> => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post(`/cbt-admin/exams/${examId}/import-results`, form).then((r) => r.data);
+  },
+
+  // NETWORK transport: run on the offline server when it is briefly online.
+  networkPull: (examId: number): Promise<{ message: string; exam: Exam }> =>
+    api.post("/cbt-admin/offline/pull-exam", { exam_id: examId }).then((r) => r.data),
+
+  networkPushResults: (examId: number): Promise<{ message: string }> =>
+    api.post(`/cbt-admin/exams/${examId}/network-push-results`).then((r) => r.data),
 };
+
+/** Pull the filename out of a Content-Disposition header, with a fallback. */
+function filenameFrom(disposition: unknown, fallback: string): string {
+  if (typeof disposition === "string") {
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match) return match[1];
+  }
+  return fallback;
+}

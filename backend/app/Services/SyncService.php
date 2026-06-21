@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Notifications\ExamResultsAvailable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class SyncService
 {
@@ -104,79 +105,16 @@ class SyncService
 
             $response->throw();
 
-            $body = $response->json();
-
-            DB::transaction(function () use ($body, $exam): void {
-                $now = now()->toDateTimeString();
-
-                foreach ($body['sessions'] ?? [] as $s) {
-                    $sessionId = $s['id'];
-                    ExamSession::upsert([[
-                        'id'               => $sessionId,
-                        'exam_id'          => $s['exam_id'],
-                        'student_id'       => $s['student_id'],
-                        'started_at'       => $s['started_at'],
-                        'submitted_at'     => $s['submitted_at'],
-                        'is_auto_submitted' => $s['is_auto_submitted'] ? 1 : 0,
-                        'synced_at'        => $now,
-                        'created_at'       => $now,
-                        'updated_at'       => $now,
-                    ]], ['id'], ['submitted_at', 'is_auto_submitted', 'synced_at', 'updated_at']);
-
-                    foreach ($s['answers'] ?? [] as $a) {
-                        StudentAnswer::upsert([[
-                            'id'              => $a['id'],
-                            'exam_session_id' => $a['exam_session_id'],
-                            'question_id'     => $a['question_id'],
-                            'student_answer'  => $a['student_answer'],
-                            'is_correct'      => $a['is_correct'] ? 1 : 0,
-                            'marks_earned'    => $a['marks_earned'],
-                            'order_index'     => $a['order_index'],
-                            'created_at'      => $now,
-                            'updated_at'      => $now,
-                        ]], ['id'], ['student_answer', 'is_correct', 'marks_earned', 'updated_at']);
-                    }
-                }
-
-                foreach ($body['results'] ?? [] as $r) {
-                    ExamResult::upsert([[
-                        'id'          => $r['id'],
-                        'exam_id'     => $r['exam_id'],
-                        'student_id'  => $r['student_id'],
-                        'total_score' => $r['total_score'],
-                        'total_marks' => $r['total_marks'],
-                        'percentage'  => $r['percentage'],
-                        'grade'       => $r['grade'],
-                        'is_absent'   => $r['is_absent'] ? 1 : 0,
-                        'synced_at'   => $now,
-                        'created_at'  => $now,
-                        'updated_at'  => $now,
-                    ]], ['id'], ['total_score', 'total_marks', 'percentage', 'grade', 'synced_at', 'updated_at']);
-                }
-
-                $exam->update(['status' => ExamStatus::ResultsSynced]);
-            });
-
-            $sessionCount = count($body['sessions'] ?? []);
-            $resultCount  = count($body['results'] ?? []);
+            $counts = $this->applyResults($exam, $response->json());
 
             $log->update([
                 'status'          => SyncStatus::Success,
                 'synced_at'       => now(),
-                'payload_summary' => ['sessions' => $sessionCount, 'results' => $resultCount],
+                'payload_summary' => $counts,
             ]);
 
             $this->auditLog->log('results_pulled_from_offline', $actor, Exam::class, $exam->id,
-                newValues: ['sessions' => $sessionCount, 'results' => $resultCount], ipAddress: $ip);
-
-            // Notify all lecturers assigned to this course
-            $exam->loadMissing('course');
-            if ($exam->course_id) {
-                $lecturerIds = LecturerCourse::where('course_id', $exam->course_id)->pluck('lecturer_id');
-                User::whereIn('id', $lecturerIds)->each(
-                    fn (User $u) => $u->notify(new ExamResultsAvailable($exam))
-                );
-            }
+                newValues: $counts, ipAddress: $ip);
         } catch (\Throwable $e) {
             $log->update([
                 'status'        => SyncStatus::Failed,
@@ -273,5 +211,197 @@ class SyncService
             ],
             'exam_codes'    => $exam->codes->map->only(['id', 'exam_id', 'student_id', 'code', 'is_used'])->all(),
         ];
+    }
+
+    /**
+     * Rebuild the full exam graph from a package (the array produced by
+     * buildExamPayload), preserving primary keys. Transport-agnostic: used by
+     * the LAN push receiver, the file import, and the network pull. Idempotent.
+     */
+    public function importExamPackage(array $data): Exam
+    {
+        return DB::transaction(function () use ($data): Exam {
+            $now = now();
+
+            // Order matters: every upsert respects foreign-key dependencies.
+            $this->upsertRows('colleges', $data['colleges'] ?? [], $now);
+            $this->upsertRows('schools', $data['schools'] ?? [], $now);
+            $this->upsertRows('departments', $data['departments'] ?? [], $now);
+
+            if (! empty($data['lecturer'])) {
+                $lecturer = $data['lecturer'];
+                // FK-only placeholder account; never logged into on the offline server.
+                $lecturer['password'] = bcrypt(Str::random(40));
+                $lecturer['is_active'] = true;
+                $lecturer['force_password_change'] = false;
+                $this->upsertRows('users', [$lecturer], $now);
+            }
+
+            $this->upsertRows('courses', [$data['course']], $now);
+            $this->upsertRows('question_banks', [$data['question_bank']], $now);
+
+            $questions = [];
+            $options   = [];
+            $answers   = [];
+            foreach ($data['questions'] ?? [] as $q) {
+                $options = array_merge($options, $q['options'] ?? []);
+                $answers = array_merge($answers, $q['answers'] ?? []);
+                unset($q['options'], $q['answers']);
+                $questions[] = $q;
+            }
+            $this->upsertRows('questions', $questions, $now);
+            $this->upsertRows('question_options', $options, $now);
+            $this->upsertRows('question_answers', $answers, $now);
+
+            $this->upsertRows('students', $data['students'] ?? [], $now);
+            $this->upsertRows('exams', [$data['exam']], $now);
+            $this->upsertRows('exam_codes', $data['exam_codes'] ?? [], $now, ['generated_at' => $now]);
+
+            return Exam::findOrFail($data['exam']['id']);
+        });
+    }
+
+    /**
+     * Assemble the results package (sessions + answers + results) for an exam on
+     * the offline server. Used by the LAN pull endpoint, the file export, and
+     * the network push.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildResultsPackage(Exam $exam): array
+    {
+        $sessions = ExamSession::with('answers')
+            ->where('exam_id', $exam->id)
+            ->whereNotNull('submitted_at')
+            ->get();
+
+        $results = ExamResult::where('exam_id', $exam->id)->get();
+
+        return [
+            'exam_id'  => $exam->id,
+            'sessions' => $sessions->map(fn ($s) => [
+                'id'                => $s->id,
+                'exam_id'           => $s->exam_id,
+                'student_id'        => $s->student_id,
+                'started_at'        => $s->started_at?->toIso8601String(),
+                'submitted_at'      => $s->submitted_at?->toIso8601String(),
+                'is_auto_submitted' => (bool) $s->is_auto_submitted,
+                'answers'           => $s->answers->map(fn ($a) => [
+                    'id'              => $a->id,
+                    'exam_session_id' => $a->exam_session_id,
+                    'question_id'     => $a->question_id,
+                    'student_answer'  => $a->student_answer,
+                    'is_correct'      => (bool) $a->is_correct,
+                    'marks_earned'    => (float) $a->marks_earned,
+                    'order_index'     => $a->order_index,
+                ])->all(),
+            ])->all(),
+            'results' => $results->map(fn ($r) => [
+                'id'          => $r->id,
+                'exam_id'     => $r->exam_id,
+                'student_id'  => $r->student_id,
+                'total_score' => (float) $r->total_score,
+                'total_marks' => (float) $r->total_marks,
+                'percentage'  => (float) $r->percentage,
+                'grade'       => $r->grade,
+                'is_absent'   => (bool) $r->is_absent,
+            ])->all(),
+        ];
+    }
+
+    /**
+     * Upsert a results package onto the online server, mark the exam
+     * results_synced, and notify the course's lecturers. Transport-agnostic:
+     * used by the LAN pull, the file import, and the network receive.
+     *
+     * @return array{sessions: int, results: int}
+     */
+    public function applyResults(Exam $exam, array $body): array
+    {
+        DB::transaction(function () use ($body, $exam): void {
+            $now = now()->toDateTimeString();
+
+            foreach ($body['sessions'] ?? [] as $s) {
+                ExamSession::upsert([[
+                    'id'                => $s['id'],
+                    'exam_id'           => $s['exam_id'],
+                    'student_id'        => $s['student_id'],
+                    'started_at'        => $s['started_at'],
+                    'submitted_at'      => $s['submitted_at'],
+                    'is_auto_submitted' => $s['is_auto_submitted'] ? 1 : 0,
+                    'synced_at'         => $now,
+                    'created_at'        => $now,
+                    'updated_at'        => $now,
+                ]], ['id'], ['submitted_at', 'is_auto_submitted', 'synced_at', 'updated_at']);
+
+                foreach ($s['answers'] ?? [] as $a) {
+                    StudentAnswer::upsert([[
+                        'id'              => $a['id'],
+                        'exam_session_id' => $a['exam_session_id'],
+                        'question_id'     => $a['question_id'],
+                        'student_answer'  => $a['student_answer'],
+                        'is_correct'      => $a['is_correct'] ? 1 : 0,
+                        'marks_earned'    => $a['marks_earned'],
+                        'order_index'     => $a['order_index'],
+                        'created_at'      => $now,
+                        'updated_at'      => $now,
+                    ]], ['id'], ['student_answer', 'is_correct', 'marks_earned', 'updated_at']);
+                }
+            }
+
+            foreach ($body['results'] ?? [] as $r) {
+                ExamResult::upsert([[
+                    'id'          => $r['id'],
+                    'exam_id'     => $r['exam_id'],
+                    'student_id'  => $r['student_id'],
+                    'total_score' => $r['total_score'],
+                    'total_marks' => $r['total_marks'],
+                    'percentage'  => $r['percentage'],
+                    'grade'       => $r['grade'],
+                    'is_absent'   => $r['is_absent'] ? 1 : 0,
+                    'synced_at'   => $now,
+                    'created_at'  => $now,
+                    'updated_at'  => $now,
+                ]], ['id'], ['total_score', 'total_marks', 'percentage', 'grade', 'synced_at', 'updated_at']);
+            }
+
+            $exam->update(['status' => ExamStatus::ResultsSynced]);
+        });
+
+        $exam->loadMissing('course');
+        if ($exam->course_id) {
+            $lecturerIds = LecturerCourse::where('course_id', $exam->course_id)->pluck('lecturer_id');
+            User::whereIn('id', $lecturerIds)->each(
+                fn (User $u) => $u->notify(new ExamResultsAvailable($exam))
+            );
+        }
+
+        return [
+            'sessions' => count($body['sessions'] ?? []),
+            'results'  => count($body['results'] ?? []),
+        ];
+    }
+
+    /**
+     * Insert-or-update a batch of rows by primary key, stamping timestamps.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $extra
+     */
+    private function upsertRows(string $table, array $rows, \DateTimeInterface $now, array $extra = []): void
+    {
+        if (empty($rows)) {
+            return;
+        }
+
+        $prepared = array_map(fn (array $row) => array_merge($row, $extra, [
+            'created_at' => $row['created_at'] ?? $now,
+            'updated_at' => $now,
+        ]), $rows);
+
+        $columns = array_keys($prepared[0]);
+        $update  = array_values(array_diff($columns, ['id', 'created_at']));
+
+        DB::table($table)->upsert($prepared, ['id'], $update);
     }
 }
