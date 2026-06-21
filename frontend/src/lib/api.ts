@@ -20,6 +20,12 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // For file uploads, drop the default JSON content-type so the browser sets
+  // multipart/form-data with the correct boundary (otherwise Laravel can't
+  // parse the upload and reports the file field as missing).
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    config.headers.delete("Content-Type");
+  }
   return config;
 });
 
