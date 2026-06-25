@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Exam;
 use App\Models\ExamCode;
 use App\Models\Student;
+use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -15,6 +16,7 @@ class ExamCodeGeneratorService
      * so codes can be read aloud and typed without confusion.
      */
     private const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
     private const LENGTH = 8;
 
     public function __construct(
@@ -45,18 +47,18 @@ class ExamCodeGeneratorService
         }
 
         $rows = $pending->map(fn (Student $student) => [
-            'exam_id'      => $exam->id,
-            'student_id'   => $student->id,
-            'code'         => $this->uniqueCode(),
-            'is_used'      => false,
+            'exam_id' => $exam->id,
+            'student_id' => $student->id,
+            'code' => $this->uniqueCode(),
+            'is_used' => false,
             'generated_at' => now(),
-            'created_at'   => now(),
-            'updated_at'   => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
         ])->all();
 
         DB::transaction(fn () => ExamCode::insert($rows));
 
-        $this->auditLog->log('exam_codes_generated', $actorId ? \App\Models\User::find($actorId) : null,
+        $this->auditLog->log('exam_codes_generated', $actorId ? User::find($actorId) : null,
             Exam::class, $exam->id,
             newValues: ['count' => count($rows)],
             ipAddress: $ip);
@@ -81,21 +83,27 @@ class ExamCodeGeneratorService
     }
 
     /**
-     * Produce a code that is not already present in exam_codes. Keeps a small
-     * in-memory cache of codes minted in this call to avoid intra-batch clashes
-     * before the rows are inserted.
+     * Codes that already exist (loaded once) plus those minted in this run. Codes
+     * are globally unique, so we check the whole set in memory instead of issuing
+     * a `SELECT … EXISTS` per generated code.
      *
-     * @var array<string, true>
+     * @var array<string, true>|null
      */
-    private array $minted = [];
+    private ?array $seenCodes = null;
 
     private function uniqueCode(): string
     {
+        if ($this->seenCodes === null) {
+            $this->seenCodes = ExamCode::query()->pluck('code')
+                ->mapWithKeys(fn (string $c) => [$c => true])
+                ->all();
+        }
+
         do {
             $code = $this->randomCode();
-        } while (isset($this->minted[$code]) || ExamCode::where('code', $code)->exists());
+        } while (isset($this->seenCodes[$code]));
 
-        $this->minted[$code] = true;
+        $this->seenCodes[$code] = true;
 
         return $code;
     }

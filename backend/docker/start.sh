@@ -13,6 +13,10 @@ mkdir -p \
   storage/framework/views \
   storage/logs
 
+# The storage volume mounts over the image's copy, so (re)apply ownership at
+# runtime — the PHP-FPM workers run as www-data and must be able to write here.
+chown -R www-data:www-data storage bootstrap/cache || true
+
 # Wait for the database to accept TCP connections. Compose's healthcheck +
 # depends_on usually covers this, but retry so a cold start never races the DB.
 echo ">> waiting for database ${DB_HOST:-db}:${DB_PORT:-3306} ..."
@@ -38,4 +42,9 @@ if [ ! -f storage/app/.seeded ]; then
   touch storage/app/.seeded
 fi
 
-exec php artisan serve --host=0.0.0.0 --port="${PORT:-8000}"
+# Cache config, routes and events so each request skips re-parsing them. Re-run
+# every boot so the cache always reflects the current environment.
+php artisan optimize
+
+# nginx + PHP-FPM + the grading queue workers, supervised in the foreground.
+exec supervisord -c /etc/supervisor/conf.d/cbt.conf

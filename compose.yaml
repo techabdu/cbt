@@ -7,8 +7,9 @@
 #
 # Services:
 #   frontend → http://localhost:3000   Next.js (staff dashboards + student exam UI)
-#   backend  → http://localhost:8000   Laravel API (REST, served under /api/*)
+#   backend  → http://localhost:8000   Laravel API (nginx + PHP-FPM + queue worker)
 #   db       → MySQL 8 (the engine the app targets in production)
+#   redis    → Redis 7 (cache, sessions, queue, locks — off-loads MySQL at scale)
 #
 # Auth is Sanctum bearer tokens (not session cookies), so the browser calls the
 # API directly at http://localhost:8000/api; CORS is opened to the frontend
@@ -24,6 +25,8 @@ services:
       MYSQL_ROOT_PASSWORD: root_secret
     volumes:
       - db_data:/var/lib/mysql
+      # Exam-time tuning (buffer pool, connections, redo log) — see the file.
+      - ./deploy/mysql/my.cnf:/etc/mysql/conf.d/cbt.cnf:ro
     ports:
       - "3306:3306" # optional: point a DB GUI at localhost:3306
     healthcheck:
@@ -33,10 +36,25 @@ services:
       retries: 20
       start_period: 20s
 
+  redis:
+    image: redis:7-alpine
+    # Backs cache, sessions, the queue and atomic locks — keeps that load off
+    # MySQL so the DB is free to serve exam reads/writes under peak concurrency.
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "6379:6379" # optional: point a Redis GUI at localhost:6379
+
   backend:
     build: ./backend
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       APP_NAME: "CBT System"
@@ -54,9 +72,14 @@ services:
       DB_DATABASE: cbt_online
       DB_USERNAME: cbt_user
       DB_PASSWORD: cbt_secret
-      SESSION_DRIVER: database
-      CACHE_STORE: database
-      QUEUE_CONNECTION: database
+      # Cache, sessions, queue and locks all live in Redis (not MySQL) so the
+      # database is not the bottleneck under exam-time concurrency.
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SESSION_DRIVER: redis
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
       FILESYSTEM_DISK: local
       # Sanctum bearer-token auth (8-hour token lifetime).
       SANCTUM_STATEFUL_DOMAINS: localhost:3000,127.0.0.1:3000
@@ -74,7 +97,9 @@ services:
     volumes:
       - backend_storage:/app/storage # keep uploaded files (question-bank attachments) across restarts
     ports:
-      - "8000:8000"
+      # nginx (in the backend image) listens on 80; published on the host's 8000
+      # so the frontend's NEXT_PUBLIC_API_URL (http://localhost:8000/api) is unchanged.
+      - "8000:80"
 
   frontend:
     build:

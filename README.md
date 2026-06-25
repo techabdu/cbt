@@ -22,6 +22,8 @@ The two are distinguished only by their `.env` (`IS_OFFLINE_SERVER`).
 | Frontend     | Next.js 16 (App Router), TypeScript, Tailwind CSS v4  |
 | UI           | shadcn/ui-style components, TanStack Query + Table    |
 | Database     | MySQL 8                                               |
+| Cache/Queue  | Redis 7 (cache, sessions, queue, locks)               |
+| Runtime      | nginx + PHP-FPM (OPcache) + supervised queue workers  |
 | Exports      | dompdf (PDF), maatwebsite/excel (Excel)               |
 
 ## Roles
@@ -65,10 +67,14 @@ Needs only [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 docker compose up --build
 ```
 
-This builds the frontend, backend, and a MySQL 8 database, applies the
-migrations, and seeds the bootstrap data (system settings, college, and the
-Super Admin account) on the first run. Once the Laravel and Next.js servers
-report ready, open http://localhost:3000.
+This builds the frontend, the backend (nginx + PHP-FPM + supervised queue
+workers), a MySQL 8 database and a Redis 7 instance, applies the migrations, and
+seeds the bootstrap data (system settings, college, and the Super Admin account)
+on the first run. Once the servers report ready, open http://localhost:3000.
+
+> **Deploying for real load (up to ~5,000 concurrent exam-takers)?** See
+> [`DEPLOYMENT.md`](DEPLOYMENT.md) for the production runtime, Redis, queue
+> workers, MySQL tuning, capacity sizing and the bare-metal setup.
 
 ```bash
 docker compose down       # stop (your data is kept)

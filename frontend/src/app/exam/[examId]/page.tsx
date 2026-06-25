@@ -33,6 +33,10 @@ export default function ExamPage({ params }: { params: Promise<{ examId: string 
   const [lastSaved, setLastSaved] = React.useState<number>(Date.now());
 
   const saveTimers = React.useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  // Question ids whose local edits are not yet confirmed saved on the server.
+  const dirty = React.useRef<Set<number>>(new Set());
+  // Always-current snapshot of answers so autosave never reads a stale closure.
+  const answersRef = React.useRef(answers);
 
   // ── Bootstrap: prefer instant boot data, then confirm with the server ──────
   React.useEffect(() => {
@@ -66,6 +70,7 @@ export default function ExamPage({ params }: { params: Promise<{ examId: string 
 
   // ── Persist locally for crash/F5 resilience ────────────────────────────────
   React.useEffect(() => {
+    answersRef.current = answers;
     if (data) sessionStorage.setItem(ANSWERS_KEY, JSON.stringify(answers));
   }, [answers, data]);
   React.useEffect(() => {
@@ -80,32 +85,41 @@ export default function ExamPage({ params }: { params: Promise<{ examId: string 
     return () => window.removeEventListener("beforeunload", handler);
   }, [submitted]);
 
-  // ── Periodic bulk autosave (every 60s) ─────────────────────────────────────
+  // ── Periodic bulk autosave (every 60s) — only changed answers ──────────────
+  // bulkSave reads refs (not state) so it's stable and the interval isn't torn
+  // down and rebuilt on every keystroke.
+  const bulkSave = React.useCallback(async () => {
+    const ids = [...dirty.current];
+    if (!ids.length) return;
+    // Snapshot what we send so we only clear the dirty flag for ids that haven't
+    // changed again while the request was in flight (no lost updates).
+    const sent = ids.map((qid) => [qid, answersRef.current[qid] ?? null] as const);
+    try {
+      await examService.autosave(sent.map(([question_id, answer]) => ({ question_id, answer })));
+      sent.forEach(([id, val]) => {
+        if ((answersRef.current[id] ?? null) === val) dirty.current.delete(id);
+      });
+      setLastSaved(Date.now());
+    } catch { /* LAN hiccup — keep them dirty, retry next cycle */ }
+  }, []);
+
   React.useEffect(() => {
     if (!data || submitted) return;
     const id = setInterval(() => { void bulkSave(); }, 60_000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, submitted, answers]);
-
-  const bulkSave = React.useCallback(async () => {
-    const payload = Object.entries(answers).map(([qid, ans]) => ({ question_id: Number(qid), answer: ans }));
-    if (!payload.length) return;
-    try {
-      await examService.autosave(payload);
-      setLastSaved(Date.now());
-    } catch { /* LAN hiccup — keep local copy, retry next cycle */ }
-  }, [answers]);
+  }, [data, submitted, bulkSave]);
 
   const setAnswer = (questionId: number, value: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+    dirty.current.add(questionId);
     // Debounced single-answer save.
     clearTimeout(saveTimers.current[questionId]);
     saveTimers.current[questionId] = setTimeout(async () => {
       try {
         await examService.answer(questionId, value);
+        dirty.current.delete(questionId);
         setLastSaved(Date.now());
-      } catch { /* will be re-sent by the next bulk autosave */ }
+      } catch { /* stays dirty — re-sent by the next bulk autosave */ }
     }, 700);
   };
 

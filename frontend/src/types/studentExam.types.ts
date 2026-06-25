@@ -44,5 +44,7 @@ export interface ExamSubmitResponse {
   message: string;
   answered: number;
   total: number;
-  result_id: number;
+  // Grading runs asynchronously on the server; no score/result id is returned
+  // at submit time (results are released later).
+  status: "grading";
 }
