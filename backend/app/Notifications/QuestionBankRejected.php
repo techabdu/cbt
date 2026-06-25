@@ -3,10 +3,16 @@
 namespace App\Notifications;
 
 use App\Models\QuestionBank;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
+use Illuminate\Queue\SerializesModels;
 
-class QuestionBankRejected extends Notification
+class QuestionBankRejected extends Notification implements ShouldQueue
 {
+    use Queueable;
+    use SerializesModels;
+
     public function __construct(
         private readonly QuestionBank $bank,
         private readonly string $reason,
@@ -28,12 +34,12 @@ class QuestionBankRejected extends Notification
         $courseCode = $this->bank->course?->code ?? 'your course';
 
         return [
-            'title'    => 'Question bank returned for revision',
-            'message'  => "Your question bank for {$courseCode} needs changes: {$this->reason}",
+            'title' => 'Question bank returned for revision',
+            'message' => "Your question bank for {$courseCode} needs changes: {$this->reason}",
             'category' => 'rejected',
-            'link'     => "/dashboard/lecturer/question-banks/{$this->bank->id}",
+            'link' => "/dashboard/lecturer/question-banks/{$this->bank->id}",
             'question_bank_id' => $this->bank->id,
-            'reason'   => $this->reason,
+            'reason' => $this->reason,
         ];
     }
 }
