@@ -2,16 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Enums\QuestionBankStatus;
-use App\Enums\UserRole;
-use App\Models\College;
-use App\Models\Course;
-use App\Models\Department;
-use App\Models\Exam;
-use App\Models\QuestionBank;
-use App\Models\School;
-use App\Models\Student;
-use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -23,8 +13,10 @@ use Illuminate\Support\Str;
  * pairs to a JSON file the k6 script consumes (scripts/loadtest/).
  *
  * Logging in only needs a matching exam_code + student matric, so this skips the
- * full enrolment graph and bulk-inserts students and codes for speed. Each run
- * uses a fresh random prefix, so it is safe to run repeatedly.
+ * full enrolment graph. It uses plain DB inserts (no model factories / Faker) so
+ * it also runs inside the production image, which is built with
+ * `composer install --no-dev`. Each run uses a fresh random prefix, so it is
+ * safe to run repeatedly.
  */
 class SeedLoadTestExam extends Command
 {
@@ -51,48 +43,65 @@ class SeedLoadTestExam extends Command
             return self::FAILURE;
         }
 
-        $prefix = 'LT'.strtoupper(Str::random(4)); // unique per run, ≤ 12-char codes
+        $prefix = 'LT'.strtoupper(Str::random(4)); // unique per run; ≤ 12-char codes
+        $now = now();
         $this->info("Seeding load-test exam (prefix {$prefix}) ...");
 
-        // ── Singletons (cheap) ─────────────────────────────────────────────────
-        $college = College::query()->first() ?? College::factory()->create();
-        $school = School::factory()->create(['college_id' => $college->id]);
-        $department = Department::factory()->create(['school_id' => $school->id]);
-        $lecturer = User::factory()->role(UserRole::Lecturer)->create(['school_id' => $school->id]);
-        $course = Course::factory()->create(['school_id' => $school->id, 'department_id' => $department->id]);
+        // ── Singletons (plain inserts; reuse the existing college if present) ───
+        $collegeId = DB::table('colleges')->value('id')
+            ?? DB::table('colleges')->insertGetId(['name' => 'Load Test College', 'created_at' => $now, 'updated_at' => $now]);
 
-        $bank = QuestionBank::factory()->status(QuestionBankStatus::Approved)->create([
-            'lecturer_id' => $lecturer->id,
-            'course_id' => $course->id,
-            'session' => '2024/2025',
-            'semester' => 'first',
-            'total_questions' => $questionCount,
+        $schoolId = DB::table('schools')->insertGetId([
+            'college_id' => $collegeId, 'name' => "Load Test School {$prefix}", 'code' => $prefix,
+            'created_at' => $now, 'updated_at' => $now,
         ]);
 
-        $this->createQuestions($bank, $questionCount);
+        $departmentId = DB::table('departments')->insertGetId([
+            'school_id' => $schoolId, 'name' => "Load Test Dept {$prefix}", 'code' => $prefix.'D',
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
 
-        $exam = Exam::factory()->create([
-            'course_id' => $course->id,
-            'question_bank_id' => $bank->id,
-            'session' => '2024/2025',
-            'semester' => 'first',
-            'duration_minutes' => $duration,
+        $lecturerId = DB::table('users')->insertGetId([
+            'file_number' => 'LT/'.$prefix, 'name' => 'Load Test Lecturer',
+            'email' => strtolower($prefix).'@loadtest.local', 'password' => bcrypt('password'),
+            'role' => 'lecturer', 'school_id' => $schoolId, 'department_id' => $departmentId,
+            'is_active' => true, 'force_password_change' => false, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        $courseId = DB::table('courses')->insertGetId([
+            'school_id' => $schoolId, 'department_id' => $departmentId, 'title' => 'Load Test Course',
+            'code' => $prefix.'C', 'credit_units' => 2, 'level' => 'NCE_100', 'semester' => 'first',
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        $bankId = DB::table('question_banks')->insertGetId([
+            'lecturer_id' => $lecturerId, 'course_id' => $courseId, 'title' => 'Load Test Bank',
+            'session' => '2024/2025', 'semester' => 'first', 'total_questions' => $questionCount,
+            'status' => 'approved', 'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        $this->createQuestions($bankId, $questionCount, $now);
+
+        $examId = DB::table('exams')->insertGetId([
+            'course_id' => $courseId, 'question_bank_id' => $bankId, 'session' => '2024/2025',
+            'semester' => 'first', 'exam_date' => $now->toDateString(), 'start_time' => '09:00:00',
+            'duration_minutes' => $duration, 'status' => 'scheduled', 'created_at' => $now, 'updated_at' => $now,
         ]);
 
         // ── Students + codes (bulk) ────────────────────────────────────────────
-        $this->bulkInsertStudents($prefix, $students, $school->id, $department->id);
+        $this->bulkInsertStudents($prefix, $students, $schoolId, $departmentId, $now);
 
-        $idByMatric = Student::query()
+        $idByMatric = DB::table('students')
             ->where('matric_number', 'like', $prefix.'/%')
             ->pluck('id', 'matric_number');
 
-        $credentials = $this->bulkInsertCodes($prefix, $exam->id, $idByMatric);
+        $credentials = $this->bulkInsertCodes($prefix, $examId, $idByMatric, $now);
 
         // ── Export ─────────────────────────────────────────────────────────────
         @mkdir(dirname($output), 0777, true);
         file_put_contents($output, json_encode([
             'base_hint' => 'POST {BASE_URL}/api/student/exam/login with {matric_number, exam_code}',
-            'exam_id' => $exam->id,
+            'exam_id' => $examId,
             'count' => count($credentials),
             'credentials' => $credentials,
         ], JSON_PRETTY_PRINT));
@@ -100,7 +109,7 @@ class SeedLoadTestExam extends Command
         $this->newLine();
         $this->info('Done.');
         $this->table(['exam_id', 'students', 'questions', 'duration_min', 'credentials file'], [[
-            $exam->id, count($credentials), $questionCount, $duration, $output,
+            $examId, count($credentials), $questionCount, $duration, $output,
         ]]);
         $this->line('Run the load test with:  k6 run -e CREDENTIALS=credentials.json scripts/loadtest/exam-spike.js');
 
@@ -110,40 +119,47 @@ class SeedLoadTestExam extends Command
     /**
      * A small mix of MCQ / True-False / Fill-blank questions with options/answers.
      */
-    private function createQuestions(QuestionBank $bank, int $count): void
+    private function createQuestions(int $bankId, int $count, \DateTimeInterface $now): void
     {
-        $this->withProgressBar(range(1, $count), function (int $i) use ($bank): void {
+        $options = [];
+        $answers = [];
+
+        $this->withProgressBar(range(1, $count), function (int $i) use ($bankId, $now, &$options, &$answers): void {
             $type = ['mcq', 'true_false', 'fill_blank'][$i % 3];
 
-            $q = $bank->questions()->create([
+            $questionId = DB::table('questions')->insertGetId([
+                'question_bank_id' => $bankId,
                 'question_text' => "Load-test question {$i}?",
                 'question_type' => $type,
                 'marks' => 1,
                 'order_index' => $i,
+                'created_at' => $now,
+                'updated_at' => $now,
             ]);
 
             if ($type === 'fill_blank') {
-                $q->answers()->create(['correct_answer' => 'answer']);
+                $answers[] = ['question_id' => $questionId, 'correct_answer' => 'answer', 'created_at' => $now, 'updated_at' => $now];
             } elseif ($type === 'true_false') {
-                $q->options()->createMany([
-                    ['option_label' => 'T', 'option_text' => 'True', 'is_correct' => true],
-                    ['option_label' => 'F', 'option_text' => 'False', 'is_correct' => false],
-                ]);
+                $options[] = ['question_id' => $questionId, 'option_label' => 'T', 'option_text' => 'True', 'is_correct' => true, 'created_at' => $now, 'updated_at' => $now];
+                $options[] = ['question_id' => $questionId, 'option_label' => 'F', 'option_text' => 'False', 'is_correct' => false, 'created_at' => $now, 'updated_at' => $now];
             } else {
-                $q->options()->createMany([
-                    ['option_label' => 'A', 'option_text' => 'Option A', 'is_correct' => true],
-                    ['option_label' => 'B', 'option_text' => 'Option B', 'is_correct' => false],
-                    ['option_label' => 'C', 'option_text' => 'Option C', 'is_correct' => false],
-                    ['option_label' => 'D', 'option_text' => 'Option D', 'is_correct' => false],
-                ]);
+                foreach (['A' => true, 'B' => false, 'C' => false, 'D' => false] as $label => $correct) {
+                    $options[] = ['question_id' => $questionId, 'option_label' => $label, 'option_text' => "Option {$label}", 'is_correct' => $correct, 'created_at' => $now, 'updated_at' => $now];
+                }
             }
         });
+
+        foreach (array_chunk($options, 1000) as $chunk) {
+            DB::table('question_options')->insert($chunk);
+        }
+        if ($answers) {
+            DB::table('question_answers')->insert($answers);
+        }
         $this->newLine();
     }
 
-    private function bulkInsertStudents(string $prefix, int $count, int $schoolId, int $departmentId): void
+    private function bulkInsertStudents(string $prefix, int $count, int $schoolId, int $departmentId, \DateTimeInterface $now): void
     {
-        $now = now();
         foreach (array_chunk(range(1, $count), 1000) as $chunk) {
             $rows = array_map(fn (int $i) => [
                 'matric_number' => sprintf('%s/%05d', $prefix, $i),
@@ -164,9 +180,8 @@ class SeedLoadTestExam extends Command
      * @param  Collection<string, int>  $idByMatric
      * @return array<int, array{matric_number: string, exam_code: string}>
      */
-    private function bulkInsertCodes(string $prefix, int $examId, $idByMatric): array
+    private function bulkInsertCodes(string $prefix, int $examId, $idByMatric, \DateTimeInterface $now): array
     {
-        $now = now();
         $credentials = [];
         $rows = [];
         $i = 0;
