@@ -215,3 +215,41 @@ php artisan queue:work --once            # a worker can pick up a job
 Then run the student flow end-to-end: login → answer → wait for an autosave →
 submit (returns instantly) → confirm a row lands in `exam_results` shortly after
 (grading worker) → sync/export results.
+
+---
+
+## 9. Production security checklist
+
+`compose.yaml` is the **local** one-command stack (demo key, `APP_ENV=local`).
+Before exposing a node to real users — especially the cloud-online server — confirm:
+
+- [ ] `APP_DEBUG=false` and `APP_ENV=production` (already set in `.env.offline`).
+- [ ] `SESSION_ENCRYPT=true`.
+- [ ] `SESSION_SECURE_COOKIE=true` (serve over TLS).
+- [ ] `APP_KEY` generated per node (`php artisan key:generate`) — never the demo key.
+- [ ] Strong, unique `DB_PASSWORD` / `MYSQL_PASSWORD` (kept in sync), ideally a
+      non-root app DB user.
+- [ ] `SYNC_SECRET_KEY` is a 32+ char random value, **identical on both sync peers**,
+      never committed. (The sync middleware fails closed — a blank key rejects all
+      sync requests with 401.)
+- [ ] Redis: set `requirepass` in `deploy/redis/redis.conf` and a matching
+      `REDIS_PASSWORD` if Redis is reachable off-box; otherwise keep `bind 127.0.0.1`.
+- [ ] MySQL/Redis ports are **not** published on a public interface. `compose.yaml`
+      binds them to `127.0.0.1` only; the bare-metal path keeps them on loopback.
+- [ ] TLS terminated in front of nginx; enable the HSTS header (commented in
+      `deploy/nginx/cbt.conf` and `backend/docker/nginx.conf`).
+
+### Overriding compose secrets without editing the file
+
+`compose.yaml` ships dev fallbacks but reads real values from the environment, so it
+can run on a shared host unmodified:
+
+```bash
+export MYSQL_ROOT_PASSWORD=... MYSQL_PASSWORD=... DB_PASSWORD="$MYSQL_PASSWORD"
+export APP_KEY="base64:$(openssl rand -base64 32)"
+export SYNC_SECRET_KEY="$(openssl rand -hex 32)"
+docker compose up --build
+```
+
+Keep `MYSQL_PASSWORD` and `DB_PASSWORD` identical — the app authenticates to MySQL
+with the latter.

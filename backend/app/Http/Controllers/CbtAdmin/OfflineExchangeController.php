@@ -192,7 +192,10 @@ class OfflineExchangeController extends Controller
     /** @return array<string, mixed> */
     private function readJsonFile(Request $request): array
     {
-        $request->validate(['file' => ['required', 'file']]);
+        // Cap the upload (50 MB) so a malformed/oversized file can't exhaust memory
+        // when the whole body is read and json_decoded below. Exam/results packages
+        // are well under this even for a full 5k-student cohort.
+        $request->validate(['file' => ['required', 'file', 'max:51200']]);
         $contents = $request->file('file')->get();
         $data = json_decode((string) $contents, true);
 

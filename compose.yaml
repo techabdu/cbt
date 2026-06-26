@@ -21,16 +21,20 @@ services:
     environment:
       MYSQL_DATABASE: cbt_online
       MYSQL_USER: cbt_user
-      MYSQL_PASSWORD: cbt_secret
-      MYSQL_ROOT_PASSWORD: root_secret
+      # Dev fallbacks — override by exporting these before `docker compose up`
+      # (keep MYSQL_PASSWORD and the backend's DB_PASSWORD in sync).
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cbt_secret}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secret}
     volumes:
       - db_data:/var/lib/mysql
       # Exam-time tuning (buffer pool, connections, redo log) — see the file.
       - ./deploy/mysql/my.cnf:/etc/mysql/conf.d/cbt.cnf:ro
     ports:
-      - "3306:3306" # optional: point a DB GUI at localhost:3306
+      # Bound to loopback so the DB is reachable for a local GUI but never exposed
+      # on the host's external interfaces.
+      - "127.0.0.1:3306:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-proot_secret"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_secret}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -47,7 +51,8 @@ services:
       timeout: 3s
       retries: 20
     ports:
-      - "6379:6379" # optional: point a Redis GUI at localhost:6379
+      # Loopback-only (see the db note above).
+      - "127.0.0.1:6379:6379"
 
   backend:
     build: ./backend
@@ -61,7 +66,7 @@ services:
       APP_ENV: local
       # Demo key — fine to ship for a local app. Regenerate with:
       #   php -r "echo 'base64:'.base64_encode(random_bytes(32)).PHP_EOL;"
-      APP_KEY: "base64:BlOqVj2TQDdrioFscmFmowi2mbBaA52UFgQQ0kA95RI="
+      APP_KEY: "${APP_KEY:-base64:BlOqVj2TQDdrioFscmFmowi2mbBaA52UFgQQ0kA95RI=}"
       APP_DEBUG: "true"
       APP_URL: http://localhost:8000
       FRONTEND_URL: http://localhost:3000
@@ -71,7 +76,7 @@ services:
       DB_PORT: "3306"
       DB_DATABASE: cbt_online
       DB_USERNAME: cbt_user
-      DB_PASSWORD: cbt_secret
+      DB_PASSWORD: ${DB_PASSWORD:-cbt_secret}
       # Cache, sessions, queue and locks all live in Redis (not MySQL) so the
       # database is not the bottleneck under exam-time concurrency.
       REDIS_CLIENT: phpredis
@@ -91,7 +96,7 @@ services:
       # Cloud-online + isolated-offline. OFFLINE server only — lets it pull/push to
       # the cloud when briefly online (leave blank on the online server):
       # ONLINE_SERVER_URL: https://exams.example.com
-      SYNC_SECRET_KEY: cbt_dev_sync_secret_change_in_prod
+      SYNC_SECRET_KEY: ${SYNC_SECRET_KEY:-cbt_dev_sync_secret_change_in_prod}
       SYNC_TIMEOUT: "30"
       SYNC_RETRIES: "3"
     volumes:
