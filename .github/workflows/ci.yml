@@ -1,0 +1,118 @@
+name: CI
+
+# Gate every change into Main: nothing reaches the default branch (and from there
+# a deploy) without the backend test suite and the frontend build passing.
+on:
+  pull_request:
+    branches: [Main]
+  push:
+    branches: [Main]
+  workflow_dispatch:
+
+# Cancel superseded runs for the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Laravel / PHP 8.3)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, dom, xml, bcmath, intl, gd, zip, fileinfo, pdo_sqlite, pcntl, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: backend/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare test environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # Blocking gate — the suite runs on sqlite :memory: (see phpunit.xml).
+      - name: Run tests
+        run: php artisan test
+
+      # Informational only: the existing codebase is not Pint-clean, so style is
+      # surfaced but does not block. Run `vendor/bin/pint` locally to autofix.
+      - name: Code style (Pint)
+        run: vendor/bin/pint --test
+        continue-on-error: true
+
+      # Informational: flag known-vulnerable Composer packages.
+      - name: Dependency audit
+        run: composer audit --no-interaction
+        continue-on-error: true
+
+  frontend:
+    name: Frontend (Next.js / Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Blocking gate — a failed type-check or compile fails the build.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api
+
+      # Informational: the existing codebase has pre-existing lint findings under
+      # the strict React 19 rules, so lint is surfaced but does not block.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      # Informational: flag known-vulnerable npm packages.
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Informational: the .gitleaks.toml allowlist excludes the documented local
+      # dev placeholders so they don't raise false positives.
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
