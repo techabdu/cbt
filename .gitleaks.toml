@@ -1,0 +1,29 @@
+# gitleaks config for the CBT repo.
+#
+# Extends the default ruleset and allowlists the documented LOCAL-DEV placeholders
+# (compose.yaml / .env.example / .env.offline). These are intentionally-public dev
+# defaults, not real secrets — production overrides them via the environment (see
+# DEPLOYMENT.md). Real secrets are never committed.
+
+title = "CBT gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local-dev placeholders and template files"
+
+# Demo/dev values that ship in the local one-command stack and env templates.
+regexes = [
+  '''base64:BlOqVj2TQDdrioFscmFmowi2mbBaA52UFgQQ0kA95RI=''',
+  '''cbt_dev_sync_secret_change_in_prod''',
+  '''cbt_secret''',
+  '''root_secret''',
+]
+
+# Env templates carry placeholder keys, not real values.
+paths = [
+  '''compose\.yaml''',
+  '''backend/\.env\.example''',
+  '''backend/\.env\.offline''',
+]
