@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   backend:
-    name: Backend (Laravel / PHP 8.3)
+    name: Backend (Laravel / PHP 8.4)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,7 +30,9 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.3"
+          # 8.4 to match the Dockerfile (php:8.4-fpm) and composer.lock, whose
+          # Symfony 8.1 components require PHP >= 8.4.1.
+          php-version: "8.4"
           extensions: mbstring, dom, xml, bcmath, intl, gd, zip, fileinfo, pdo_sqlite, pcntl, redis
           coverage: none
           tools: composer:v2
