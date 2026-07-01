@@ -26,6 +26,7 @@ class SyncService
 {
     public function __construct(
         private readonly AuditLogService $auditLog,
+        private readonly AutoGradingService $grading,
     ) {}
 
     /**
@@ -37,18 +38,18 @@ class SyncService
     {
         $payload = $this->buildExamPayload($exam);
         $baseUrl = rtrim((string) config('cbt.offline_server_url'), '/');
-        $url     = $baseUrl.'/api/sync/receive-exam';
+        $url = $baseUrl.'/api/sync/receive-exam';
 
         $log = SyncLog::create([
-            'exam_id'           => $exam->id,
-            'direction'         => SyncDirection::Push,
-            'status'            => SyncStatus::Pending,
-            'initiated_by'      => $actor->id,
+            'exam_id' => $exam->id,
+            'direction' => SyncDirection::Push,
+            'status' => SyncStatus::Pending,
+            'initiated_by' => $actor->id,
             'target_server_url' => $url,
-            'payload_summary'   => [
+            'payload_summary' => [
                 'questions' => count($payload['questions']),
-                'students'  => count($payload['students']),
-                'codes'     => count($payload['exam_codes']),
+                'students' => count($payload['students']),
+                'codes' => count($payload['exam_codes']),
             ],
         ]);
 
@@ -68,7 +69,7 @@ class SyncService
                 newValues: $log->payload_summary, ipAddress: $ip);
         } catch (\Throwable $e) {
             $log->update([
-                'status'        => SyncStatus::Failed,
+                'status' => SyncStatus::Failed,
                 'error_message' => $e->getMessage(),
             ]);
 
@@ -86,15 +87,15 @@ class SyncService
     public function pullFromOffline(Exam $exam, User $actor, ?string $ip = null): SyncLog
     {
         $baseUrl = rtrim((string) config('cbt.offline_server_url'), '/');
-        $url     = $baseUrl.'/api/sync/results/'.$exam->id;
+        $url = $baseUrl.'/api/sync/results/'.$exam->id;
 
         $log = SyncLog::create([
-            'exam_id'           => $exam->id,
-            'direction'         => SyncDirection::Pull,
-            'status'            => SyncStatus::Pending,
-            'initiated_by'      => $actor->id,
+            'exam_id' => $exam->id,
+            'direction' => SyncDirection::Pull,
+            'status' => SyncStatus::Pending,
+            'initiated_by' => $actor->id,
             'target_server_url' => $url,
-            'payload_summary'   => null,
+            'payload_summary' => null,
         ]);
 
         try {
@@ -108,8 +109,8 @@ class SyncService
             $counts = $this->applyResults($exam, $response->json());
 
             $log->update([
-                'status'          => SyncStatus::Success,
-                'synced_at'       => now(),
+                'status' => SyncStatus::Success,
+                'synced_at' => now(),
                 'payload_summary' => $counts,
             ]);
 
@@ -117,7 +118,7 @@ class SyncService
                 newValues: $counts, ipAddress: $ip);
         } catch (\Throwable $e) {
             $log->update([
-                'status'        => SyncStatus::Failed,
+                'status' => SyncStatus::Failed,
                 'error_message' => $e->getMessage(),
             ]);
 
@@ -145,8 +146,8 @@ class SyncService
             'codes',
         ]);
 
-        $course   = $exam->course;
-        $bank     = $exam->questionBank;
+        $course = $exam->course;
+        $bank = $exam->questionBank;
         $lecturer = $bank->lecturer;
 
         $students = Student::whereIn('id', $exam->codes->pluck('student_id'))->get();
@@ -165,51 +166,51 @@ class SyncService
         $colleges = College::whereIn('id', $schools->pluck('college_id')->unique())->get();
 
         return [
-            'colleges'      => $colleges->map->only(['id', 'name', 'logo_path', 'contact_email', 'contact_phone', 'address'])->all(),
-            'schools'       => $schools->map->only(['id', 'college_id', 'name', 'code', 'head_name'])->all(),
-            'departments'   => $departments->map->only(['id', 'school_id', 'name', 'code', 'full_name'])->all(),
-            'lecturer'      => $lecturer ? [
-                'id'          => $lecturer->id,
+            'colleges' => $colleges->map->only(['id', 'name', 'logo_path', 'contact_email', 'contact_phone', 'address'])->all(),
+            'schools' => $schools->map->only(['id', 'college_id', 'name', 'code', 'head_name'])->all(),
+            'departments' => $departments->map->only(['id', 'school_id', 'name', 'code', 'full_name'])->all(),
+            'lecturer' => $lecturer ? [
+                'id' => $lecturer->id,
                 'file_number' => $lecturer->file_number,
-                'name'        => $lecturer->name,
-                'email'       => $lecturer->email,
-                'role'        => $lecturer->role->value,
-                'school_id'   => $lecturer->school_id,
+                'name' => $lecturer->name,
+                'email' => $lecturer->email,
+                'role' => $lecturer->role->value,
+                'school_id' => $lecturer->school_id,
             ] : null,
-            'course'        => $course->only(['id', 'school_id', 'department_id', 'title', 'code', 'credit_units', 'level', 'semester']),
+            'course' => $course->only(['id', 'school_id', 'department_id', 'title', 'code', 'credit_units', 'level', 'semester']),
             'question_bank' => [
-                'id'          => $bank->id,
+                'id' => $bank->id,
                 'lecturer_id' => $bank->lecturer_id,
-                'course_id'   => $bank->course_id,
-                'title'       => $bank->title,
-                'session'     => $bank->session,
-                'semester'    => $bank->semester->value,
+                'course_id' => $bank->course_id,
+                'title' => $bank->title,
+                'session' => $bank->session,
+                'semester' => $bank->semester->value,
                 'total_questions' => $bank->total_questions,
-                'status'      => $bank->status->value,
+                'status' => $bank->status->value,
             ],
-            'questions'     => $bank->questions->map(fn ($q) => [
-                'id'            => $q->id,
+            'questions' => $bank->questions->map(fn ($q) => [
+                'id' => $q->id,
                 'question_bank_id' => $q->question_bank_id,
                 'question_text' => $q->question_text,
                 'question_type' => $q->question_type->value,
-                'marks'         => $q->marks,
-                'order_index'   => $q->order_index,
-                'options'       => $q->options->map->only(['id', 'question_id', 'option_label', 'option_text', 'is_correct'])->all(),
-                'answers'       => $q->answers->map->only(['id', 'question_id', 'correct_answer'])->all(),
+                'marks' => $q->marks,
+                'order_index' => $q->order_index,
+                'options' => $q->options->map->only(['id', 'question_id', 'option_label', 'option_text', 'is_correct'])->all(),
+                'answers' => $q->answers->map->only(['id', 'question_id', 'correct_answer'])->all(),
             ])->all(),
-            'students'      => $students->map->only(['id', 'matric_number', 'full_name', 'department_id', 'school_id', 'level', 'is_active'])->all(),
-            'exam'          => [
-                'id'               => $exam->id,
-                'course_id'        => $exam->course_id,
+            'students' => $students->map->only(['id', 'matric_number', 'full_name', 'department_id', 'school_id', 'level', 'is_active'])->all(),
+            'exam' => [
+                'id' => $exam->id,
+                'course_id' => $exam->course_id,
                 'question_bank_id' => $exam->question_bank_id,
-                'session'          => $exam->session,
-                'semester'         => $exam->semester->value,
-                'exam_date'        => $exam->exam_date->toDateString(),
-                'start_time'       => $exam->start_time,
+                'session' => $exam->session,
+                'semester' => $exam->semester->value,
+                'exam_date' => $exam->exam_date->toDateString(),
+                'start_time' => $exam->start_time,
                 'duration_minutes' => $exam->duration_minutes,
-                'status'           => ExamStatus::Synced->value,
+                'status' => ExamStatus::Synced->value,
             ],
-            'exam_codes'    => $exam->codes->map->only(['id', 'exam_id', 'student_id', 'code', 'is_used'])->all(),
+            'exam_codes' => $exam->codes->map->only(['id', 'exam_id', 'student_id', 'code', 'is_used'])->all(),
         ];
     }
 
@@ -241,8 +242,8 @@ class SyncService
             $this->upsertRows('question_banks', [$data['question_bank']], $now);
 
             $questions = [];
-            $options   = [];
-            $answers   = [];
+            $options = [];
+            $answers = [];
             foreach ($data['questions'] ?? [] as $q) {
                 $options = array_merge($options, $q['options'] ?? []);
                 $answers = array_merge($answers, $q['answers'] ?? []);
@@ -257,6 +258,10 @@ class SyncService
             $this->upsertRows('exams', [$data['exam']], $now);
             $this->upsertRows('exam_codes', $data['exam_codes'] ?? [], $now, ['generated_at' => $now]);
 
+            // A re-import can change the questions, so drop any cached payload for
+            // this exam — students will get the fresh set on next login.
+            ExamSessionService::forgetQuestionCache((int) $data['exam']['id']);
+
             return Exam::findOrFail($data['exam']['id']);
         });
     }
@@ -270,6 +275,12 @@ class SyncService
      */
     public function buildResultsPackage(Exam $exam): array
     {
+        // Safety net: grading is queued on submit, so a session could still be
+        // ungraded if the worker pool hasn't drained. Grade any submitted session
+        // with no result yet before the package leaves the offline server, so
+        // results are never exported partial. Idempotent; a no-op once drained.
+        $this->gradePendingSessions($exam);
+
         $sessions = ExamSession::with('answers')
             ->where('exam_id', $exam->id)
             ->whereNotNull('submitted_at')
@@ -278,35 +289,51 @@ class SyncService
         $results = ExamResult::where('exam_id', $exam->id)->get();
 
         return [
-            'exam_id'  => $exam->id,
+            'exam_id' => $exam->id,
             'sessions' => $sessions->map(fn ($s) => [
-                'id'                => $s->id,
-                'exam_id'           => $s->exam_id,
-                'student_id'        => $s->student_id,
-                'started_at'        => $s->started_at?->toIso8601String(),
-                'submitted_at'      => $s->submitted_at?->toIso8601String(),
+                'id' => $s->id,
+                'exam_id' => $s->exam_id,
+                'student_id' => $s->student_id,
+                'started_at' => $s->started_at?->toIso8601String(),
+                'submitted_at' => $s->submitted_at?->toIso8601String(),
                 'is_auto_submitted' => (bool) $s->is_auto_submitted,
-                'answers'           => $s->answers->map(fn ($a) => [
-                    'id'              => $a->id,
+                'answers' => $s->answers->map(fn ($a) => [
+                    'id' => $a->id,
                     'exam_session_id' => $a->exam_session_id,
-                    'question_id'     => $a->question_id,
-                    'student_answer'  => $a->student_answer,
-                    'is_correct'      => (bool) $a->is_correct,
-                    'marks_earned'    => (float) $a->marks_earned,
-                    'order_index'     => $a->order_index,
+                    'question_id' => $a->question_id,
+                    'student_answer' => $a->student_answer,
+                    'is_correct' => (bool) $a->is_correct,
+                    'marks_earned' => (float) $a->marks_earned,
+                    'order_index' => $a->order_index,
                 ])->all(),
             ])->all(),
             'results' => $results->map(fn ($r) => [
-                'id'          => $r->id,
-                'exam_id'     => $r->exam_id,
-                'student_id'  => $r->student_id,
+                'id' => $r->id,
+                'exam_id' => $r->exam_id,
+                'student_id' => $r->student_id,
                 'total_score' => (float) $r->total_score,
                 'total_marks' => (float) $r->total_marks,
-                'percentage'  => (float) $r->percentage,
-                'grade'       => $r->grade,
-                'is_absent'   => (bool) $r->is_absent,
+                'percentage' => (float) $r->percentage,
+                'grade' => $r->grade,
+                'is_absent' => (bool) $r->is_absent,
             ])->all(),
         ];
+    }
+
+    /**
+     * Grade any submitted-but-ungraded sessions for the exam — the queue safety
+     * net behind buildResultsPackage(). Only touches sessions that have no result
+     * yet, and gradeSession() is idempotent, so this is safe to run repeatedly.
+     */
+    private function gradePendingSessions(Exam $exam): void
+    {
+        $gradedStudentIds = ExamResult::where('exam_id', $exam->id)->pluck('student_id')->all();
+
+        ExamSession::where('exam_id', $exam->id)
+            ->whereNotNull('submitted_at')
+            ->when($gradedStudentIds, fn ($q) => $q->whereNotIn('student_id', $gradedStudentIds))
+            ->get()
+            ->each(fn (ExamSession $s) => $this->grading->gradeSession($s));
     }
 
     /**
@@ -323,45 +350,45 @@ class SyncService
 
             foreach ($body['sessions'] ?? [] as $s) {
                 ExamSession::upsert([[
-                    'id'                => $s['id'],
-                    'exam_id'           => $s['exam_id'],
-                    'student_id'        => $s['student_id'],
-                    'started_at'        => $s['started_at'],
-                    'submitted_at'      => $s['submitted_at'],
+                    'id' => $s['id'],
+                    'exam_id' => $s['exam_id'],
+                    'student_id' => $s['student_id'],
+                    'started_at' => $s['started_at'],
+                    'submitted_at' => $s['submitted_at'],
                     'is_auto_submitted' => $s['is_auto_submitted'] ? 1 : 0,
-                    'synced_at'         => $now,
-                    'created_at'        => $now,
-                    'updated_at'        => $now,
+                    'synced_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
                 ]], ['id'], ['submitted_at', 'is_auto_submitted', 'synced_at', 'updated_at']);
 
                 foreach ($s['answers'] ?? [] as $a) {
                     StudentAnswer::upsert([[
-                        'id'              => $a['id'],
+                        'id' => $a['id'],
                         'exam_session_id' => $a['exam_session_id'],
-                        'question_id'     => $a['question_id'],
-                        'student_answer'  => $a['student_answer'],
-                        'is_correct'      => $a['is_correct'] ? 1 : 0,
-                        'marks_earned'    => $a['marks_earned'],
-                        'order_index'     => $a['order_index'],
-                        'created_at'      => $now,
-                        'updated_at'      => $now,
+                        'question_id' => $a['question_id'],
+                        'student_answer' => $a['student_answer'],
+                        'is_correct' => $a['is_correct'] ? 1 : 0,
+                        'marks_earned' => $a['marks_earned'],
+                        'order_index' => $a['order_index'],
+                        'created_at' => $now,
+                        'updated_at' => $now,
                     ]], ['id'], ['student_answer', 'is_correct', 'marks_earned', 'updated_at']);
                 }
             }
 
             foreach ($body['results'] ?? [] as $r) {
                 ExamResult::upsert([[
-                    'id'          => $r['id'],
-                    'exam_id'     => $r['exam_id'],
-                    'student_id'  => $r['student_id'],
+                    'id' => $r['id'],
+                    'exam_id' => $r['exam_id'],
+                    'student_id' => $r['student_id'],
                     'total_score' => $r['total_score'],
                     'total_marks' => $r['total_marks'],
-                    'percentage'  => $r['percentage'],
-                    'grade'       => $r['grade'],
-                    'is_absent'   => $r['is_absent'] ? 1 : 0,
-                    'synced_at'   => $now,
-                    'created_at'  => $now,
-                    'updated_at'  => $now,
+                    'percentage' => $r['percentage'],
+                    'grade' => $r['grade'],
+                    'is_absent' => $r['is_absent'] ? 1 : 0,
+                    'synced_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
                 ]], ['id'], ['total_score', 'total_marks', 'percentage', 'grade', 'synced_at', 'updated_at']);
             }
 
@@ -378,7 +405,7 @@ class SyncService
 
         return [
             'sessions' => count($body['sessions'] ?? []),
-            'results'  => count($body['results'] ?? []),
+            'results' => count($body['results'] ?? []),
         ];
     }
 
@@ -400,7 +427,7 @@ class SyncService
         ]), $rows);
 
         $columns = array_keys($prepared[0]);
-        $update  = array_values(array_diff($columns, ['id', 'created_at']));
+        $update = array_values(array_diff($columns, ['id', 'created_at']));
 
         DB::table($table)->upsert($prepared, ['id'], $update);
     }

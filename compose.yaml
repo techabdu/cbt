@@ -7,8 +7,9 @@
 #
 # Services:
 #   frontend → http://localhost:3000   Next.js (staff dashboards + student exam UI)
-#   backend  → http://localhost:8000   Laravel API (REST, served under /api/*)
+#   backend  → http://localhost:8000   Laravel API (nginx + PHP-FPM + queue worker)
 #   db       → MySQL 8 (the engine the app targets in production)
+#   redis    → Redis 7 (cache, sessions, queue, locks — off-loads MySQL at scale)
 #
 # Auth is Sanctum bearer tokens (not session cookies), so the browser calls the
 # API directly at http://localhost:8000/api; CORS is opened to the frontend
@@ -20,30 +21,52 @@ services:
     environment:
       MYSQL_DATABASE: cbt_online
       MYSQL_USER: cbt_user
-      MYSQL_PASSWORD: cbt_secret
-      MYSQL_ROOT_PASSWORD: root_secret
+      # Dev fallbacks — override by exporting these before `docker compose up`
+      # (keep MYSQL_PASSWORD and the backend's DB_PASSWORD in sync).
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cbt_secret}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secret}
     volumes:
       - db_data:/var/lib/mysql
+      # Exam-time tuning (buffer pool, connections, redo log) — see the file.
+      - ./deploy/mysql/my.cnf:/etc/mysql/conf.d/cbt.cnf:ro
     ports:
-      - "3306:3306" # optional: point a DB GUI at localhost:3306
+      # Bound to loopback so the DB is reachable for a local GUI but never exposed
+      # on the host's external interfaces.
+      - "127.0.0.1:3306:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-proot_secret"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_secret}"]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    # Backs cache, sessions, the queue and atomic locks — keeps that load off
+    # MySQL so the DB is free to serve exam reads/writes under peak concurrency.
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      # Loopback-only (see the db note above).
+      - "127.0.0.1:6379:6379"
 
   backend:
     build: ./backend
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       APP_NAME: "CBT System"
       APP_ENV: local
       # Demo key — fine to ship for a local app. Regenerate with:
       #   php -r "echo 'base64:'.base64_encode(random_bytes(32)).PHP_EOL;"
-      APP_KEY: "base64:BlOqVj2TQDdrioFscmFmowi2mbBaA52UFgQQ0kA95RI="
+      APP_KEY: "${APP_KEY:-base64:BlOqVj2TQDdrioFscmFmowi2mbBaA52UFgQQ0kA95RI=}"
       APP_DEBUG: "true"
       APP_URL: http://localhost:8000
       FRONTEND_URL: http://localhost:3000
@@ -53,10 +76,15 @@ services:
       DB_PORT: "3306"
       DB_DATABASE: cbt_online
       DB_USERNAME: cbt_user
-      DB_PASSWORD: cbt_secret
-      SESSION_DRIVER: database
-      CACHE_STORE: database
-      QUEUE_CONNECTION: database
+      DB_PASSWORD: ${DB_PASSWORD:-cbt_secret}
+      # Cache, sessions, queue and locks all live in Redis (not MySQL) so the
+      # database is not the bottleneck under exam-time concurrency.
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SESSION_DRIVER: redis
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
       FILESYSTEM_DISK: local
       # Sanctum bearer-token auth (8-hour token lifetime).
       SANCTUM_STATEFUL_DOMAINS: localhost:3000,127.0.0.1:3000
@@ -68,13 +96,15 @@ services:
       # Cloud-online + isolated-offline. OFFLINE server only — lets it pull/push to
       # the cloud when briefly online (leave blank on the online server):
       # ONLINE_SERVER_URL: https://exams.example.com
-      SYNC_SECRET_KEY: cbt_dev_sync_secret_change_in_prod
+      SYNC_SECRET_KEY: ${SYNC_SECRET_KEY:-cbt_dev_sync_secret_change_in_prod}
       SYNC_TIMEOUT: "30"
       SYNC_RETRIES: "3"
     volumes:
       - backend_storage:/app/storage # keep uploaded files (question-bank attachments) across restarts
     ports:
-      - "8000:8000"
+      # nginx (in the backend image) listens on 80; published on the host's 8000
+      # so the frontend's NEXT_PUBLIC_API_URL (http://localhost:8000/api) is unchanged.
+      - "8000:80"
 
   frontend:
     build:
