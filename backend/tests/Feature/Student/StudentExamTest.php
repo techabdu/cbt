@@ -194,4 +194,87 @@ class StudentExamTest extends TestCase
 
         $this->assertTrue(\App\Models\ExamSession::first()->is_auto_submitted);
     }
+
+    // ── Server-side time enforcement ───────────────────────────────────────────
+
+    public function test_answers_accepted_within_grace_window(): void
+    {
+        $login = $this->login();
+        $headers = ['X-Exam-Token' => $login['token']];
+        $mcqId = collect($login['questions'])->firstWhere('question_text', '2+2?')['id'];
+
+        // 60-min exam + 120s grace: one minute past ends_at is still accepted
+        // (the client's final autosave flush arrives up to ~60s late).
+        $this->travel(61)->minutes();
+
+        $this->postJson('/api/student/exam/answer', ['question_id' => $mcqId, 'answer' => 'B'], $headers)->assertOk();
+    }
+
+    public function test_answers_rejected_after_time_expires(): void
+    {
+        $login = $this->login();
+        $headers = ['X-Exam-Token' => $login['token']];
+        $mcqId = collect($login['questions'])->firstWhere('question_text', '2+2?')['id'];
+
+        $this->travel(63)->minutes(); // past ends_at + grace
+
+        $this->postJson('/api/student/exam/answer', ['question_id' => $mcqId, 'answer' => 'B'], $headers)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('session');
+
+        $this->postJson('/api/student/exam/autosave', [
+            'answers' => [['question_id' => $mcqId, 'answer' => 'B']],
+        ], $headers)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('session');
+    }
+
+    public function test_late_submit_is_accepted_but_flagged_auto_submitted(): void
+    {
+        $login = $this->login();
+        $headers = ['X-Exam-Token' => $login['token']];
+
+        $this->travel(63)->minutes(); // past ends_at + grace
+
+        $this->postJson('/api/student/exam/submit', [], $headers)->assertOk();
+
+        $session = \App\Models\ExamSession::first();
+        $this->assertNotNull($session->submitted_at);
+        $this->assertTrue($session->is_auto_submitted);
+    }
+
+    // ── Login throttling & races ───────────────────────────────────────────────
+
+    public function test_login_is_rate_limited_per_ip(): void
+    {
+        for ($i = 0; $i < 10; $i++) {
+            $this->postJson('/api/student/exam/login', ['matric_number' => 'NCE/2024/777', 'exam_code' => 'WRONGXXX'])
+                ->assertUnprocessable();
+        }
+
+        $this->postJson('/api/student/exam/login', ['matric_number' => 'NCE/2024/777', 'exam_code' => 'WRONGXXX'])
+            ->assertTooManyRequests();
+    }
+
+    public function test_concurrent_first_logins_do_not_500(): void
+    {
+        // Simulate the double-click race: a parallel request inserts the session
+        // row just before this login's save(), forcing the unique-key violation.
+        \App\Models\ExamSession::creating(function () {
+            \Illuminate\Support\Facades\DB::table('exam_sessions')->insert([
+                'exam_id' => $this->exam->id,
+                'student_id' => $this->student->id,
+                'started_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->postJson('/api/student/exam/login', [
+            'matric_number' => 'NCE/2024/777',
+            'exam_code' => $this->code,
+        ])->assertOk();
+
+        $this->assertEquals(1, \App\Models\ExamSession::count());
+    }
 }

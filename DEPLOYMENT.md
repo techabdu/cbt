@@ -1,8 +1,10 @@
 # CBT Deployment & Scaling Guide
 
-How to run the CBT backend so it holds up with **~5,000 students writing exams at
-once**. It covers the production runtime (nginx + PHP-FPM + Redis + queue
-workers), MySQL tuning, capacity sizing, and both Docker and bare-metal paths.
+How to run the CBT backend so **~1,000 students can write exams at once on a
+single box** (the k6-validated target; §5–6 describe scaling the same stack
+toward 5,000). It covers the production runtime (nginx + PHP-FPM + Redis +
+queue workers), MySQL tuning, capacity sizing, and both Docker and bare-metal
+paths.
 
 > **Why this exists.** The original image ran `php artisan serve` (≈4 concurrent
 > requests) with MySQL also serving cache, sessions and queue, and graded every
@@ -108,7 +110,11 @@ Reference configs live in `deploy/`. Paths below assume the app at
    `/etc/php/8.4/fpm/pool.d/cbt.conf`, `systemctl reload php8.4-fpm`.
 
 4. **nginx:** install `deploy/nginx/cbt.conf` → `/etc/nginx/sites-available/`,
-   symlink into `sites-enabled/`, set `server_name`/`root`, `nginx -t`,
+   symlink into `sites-enabled/`, set `server_name`/`root`. Then raise the
+   main-config connection limits (the stock 768 `worker_connections` is
+   exhausted by ~1,000 keepalive exam clients) — in `/etc/nginx/nginx.conf`:
+   `worker_rlimit_nofile 16384;` at the top level and
+   `worker_connections 4096;` inside `events {}`. Finish with `nginx -t`,
    `systemctl reload nginx`.
 
 5. **Redis:** apply `deploy/redis/redis.conf` settings, `systemctl enable --now redis`.
@@ -116,16 +122,19 @@ Reference configs live in `deploy/`. Paths below assume the app at
 6. **MySQL:** copy `deploy/mysql/my.cnf` → `/etc/mysql/conf.d/cbt.cnf`,
    `systemctl restart mysql`. Size `innodb_buffer_pool_size` to the box.
 
-7. **Queue workers:** install `deploy/supervisor/cbt-worker.conf` →
+7. **Queue workers + scheduler:** install `deploy/supervisor/cbt-worker.conf` →
    `/etc/supervisor/conf.d/`, then
-   `supervisorctl reread && supervisorctl update && supervisorctl start cbt-worker:*`.
-   `mkdir -p /var/log/cbt` first.
+   `supervisorctl reread && supervisorctl update && supervisorctl start cbt-worker:* cbt-scheduler`.
+   `mkdir -p /var/log/cbt` first. The scheduler runs `exam:submit-expired`
+   every minute — the server-side exam timer that force-submits sessions whose
+   crashed (or tampered-with) browser never did; without it those students
+   would silently get no result.
 
 8. **Re-run `php artisan optimize` on every deploy** (config/routes change).
 
 ---
 
-## 5. Capacity sizing for ~5,000 concurrent students
+## 5. Capacity sizing (single box: ~1,000 students; scaling toward 5,000)
 
 The exam endpoints are light (token decrypt, one cached read, one indexed
 write). Throughput is gated by PHP-FPM workers and MySQL connections, not CPU.
@@ -145,7 +154,8 @@ Worked example (single offline box):
 | `pm.max_children`             | 48    | ~40–60 MB each → ~3 GB PHP RSS         |
 | grading workers (`numprocs`)  | 4     | drain `grading` then `default`         |
 | MySQL `max_connections`       | 200   | comfortably covers 48 + 4 + headroom   |
-| `innodb_buffer_pool_size`     | ≥4 GB | hot tables must fit in RAM             |
+| `innodb_buffer_pool_size`     | 2 GB  | as shipped in `deploy/mysql/my.cnf` — fits the ~1,000-student hot set; raise toward 60–70% of RAM on a dedicated DB box |
+| nginx `worker_connections`    | 4096  | set in the main config (`backend/docker/nginx-main.conf` / step 4 below) — the stock 768 default is exhausted by ~1,000 keepalive clients |
 
 5,000 students rarely click at the same instant; with a single answer save every
 few seconds the steady-state request rate is a few hundred req/s, well within one

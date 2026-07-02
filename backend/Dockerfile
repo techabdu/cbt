@@ -21,10 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Composer.
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# PHP / FPM / OPcache tuning, the nginx site, and the process supervisor config.
+# PHP / FPM / OPcache tuning, the nginx main config (raises worker_connections
+# past the stock 768 — required for ~1000 keepalive exam clients) + site, and
+# the process supervisor config.
 COPY docker/php.ini           /usr/local/etc/php/conf.d/zz-cbt.ini
 COPY docker/opcache.ini       /usr/local/etc/php/conf.d/zz-opcache.ini
 COPY docker/php-fpm.pool.conf /usr/local/etc/php-fpm.d/zz-cbt.conf
+COPY docker/nginx-main.conf   /etc/nginx/nginx.conf
 COPY docker/nginx.conf        /etc/nginx/conf.d/default.conf
 COPY docker/supervisord.conf  /etc/supervisor/conf.d/cbt.conf
 

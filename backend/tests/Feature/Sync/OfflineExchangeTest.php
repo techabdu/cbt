@@ -15,9 +15,11 @@ use App\Models\QuestionBank;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\ExamSessionService;
 use App\Services\SyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -251,5 +253,66 @@ class OfflineExchangeTest extends TestCase
 
         $this->assertDatabaseHas('exam_results', ['exam_id' => $this->exam->id, 'grade' => 'A']);
         $this->assertEquals(ExamStatus::ResultsSynced, $this->exam->fresh()->status);
+    }
+
+    // ── Import hardening ─────────────────────────────────────────────────────────
+
+    public function test_import_warms_the_student_question_cache(): void
+    {
+        $payload = app(SyncService::class)->buildExamPayload($this->exam);
+        $examId  = $this->exam->id;
+        $this->wipeDomain();
+
+        $file = UploadedFile::fake()->createWithContent('exam.json', json_encode($payload));
+        $this->actingAs($this->admin, 'sanctum')
+            ->post('/api/cbt-admin/import-package', ['file' => $file])
+            ->assertOk();
+
+        // The exam-start login spike must hit a warm key, not rebuild it 1000×.
+        $this->assertTrue(Cache::has(ExamSessionService::questionsCacheKey($examId)));
+    }
+
+    public function test_import_drops_columns_outside_the_allowlist(): void
+    {
+        $payload = app(SyncService::class)->buildExamPayload($this->exam);
+        $lecturerId = $payload['lecturer']['id'];
+        $originalToken = User::find($lecturerId)->remember_token;
+
+        // A crafted package tries to smuggle extra columns onto existing rows.
+        $payload['lecturer']['remember_token'] = 'attacker-token';
+        $payload['colleges'][0]['nonexistent_column'] = 'x';
+        $payload['exam']['created_at'] = '1990-01-01 00:00:00';
+
+        app(SyncService::class)->importExamPackage($payload);
+
+        $this->assertSame($originalToken, User::find($lecturerId)->remember_token);
+        $this->assertNotEquals('1990-01-01 00:00:00', (string) Exam::find($this->exam->id)->created_at);
+    }
+
+    public function test_received_results_are_pinned_to_the_target_exam(): void
+    {
+        $student = Student::first();
+        $otherExam = Exam::factory()->create([
+            'course_id' => $this->exam->course_id, 'question_bank_id' => $this->exam->question_bank_id,
+            'session' => '2024/2025', 'semester' => 'second',
+        ]);
+
+        // The body claims a different exam_id; the row must land on the target
+        // exam from the URL, never on the other exam.
+        $package = [
+            'exam_id'  => $this->exam->id,
+            'sessions' => [],
+            'results'  => [[
+                'id' => 1, 'exam_id' => $otherExam->id, 'student_id' => $student->id,
+                'total_score' => 1, 'total_marks' => 1, 'percentage' => 100, 'grade' => 'A', 'is_absent' => false,
+            ]],
+        ];
+
+        $this->withHeaders(['X-Sync-Secret' => 'test-secret'])
+            ->postJson("/api/sync/receive-results/{$this->exam->id}", $package)
+            ->assertOk();
+
+        $this->assertDatabaseHas('exam_results', ['id' => 1, 'exam_id' => $this->exam->id]);
+        $this->assertDatabaseMissing('exam_results', ['exam_id' => $otherExam->id]);
     }
 }

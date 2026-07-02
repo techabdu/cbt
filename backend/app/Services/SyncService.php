@@ -21,12 +21,35 @@ use App\Notifications\ExamResultsAvailable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class SyncService
 {
+    /**
+     * The exact columns a sync/import payload may write, per table — the same
+     * set buildExamPayload() emits (plus the server-set lecturer fields). Rows
+     * are filtered against this before upserting so a crafted package cannot
+     * set arbitrary columns (e.g. remember_token, or flip flags on other rows).
+     */
+    private const SYNC_COLUMNS = [
+        'colleges' => ['id', 'name', 'logo_path', 'contact_email', 'contact_phone', 'address'],
+        'schools' => ['id', 'college_id', 'name', 'code', 'head_name'],
+        'departments' => ['id', 'school_id', 'name', 'code', 'full_name'],
+        'users' => ['id', 'file_number', 'name', 'email', 'role', 'school_id', 'password', 'is_active', 'force_password_change'],
+        'courses' => ['id', 'school_id', 'department_id', 'title', 'code', 'credit_units', 'level', 'semester'],
+        'question_banks' => ['id', 'lecturer_id', 'course_id', 'title', 'session', 'semester', 'total_questions', 'status'],
+        'questions' => ['id', 'question_bank_id', 'question_text', 'question_type', 'marks', 'order_index'],
+        'question_options' => ['id', 'question_id', 'option_label', 'option_text', 'is_correct'],
+        'question_answers' => ['id', 'question_id', 'correct_answer'],
+        'students' => ['id', 'matric_number', 'full_name', 'department_id', 'school_id', 'level', 'is_active'],
+        'exams' => ['id', 'course_id', 'question_bank_id', 'session', 'semester', 'exam_date', 'start_time', 'duration_minutes', 'status'],
+        'exam_codes' => ['id', 'exam_id', 'student_id', 'code', 'is_used'],
+    ];
+
     public function __construct(
         private readonly AuditLogService $auditLog,
         private readonly AutoGradingService $grading,
+        private readonly ExamSessionService $examSessions,
     ) {}
 
     /**
@@ -221,7 +244,7 @@ class SyncService
      */
     public function importExamPackage(array $data): Exam
     {
-        return DB::transaction(function () use ($data): Exam {
+        $exam = DB::transaction(function () use ($data): Exam {
             $now = now();
 
             // Order matters: every upsert respects foreign-key dependencies.
@@ -264,6 +287,13 @@ class SyncService
 
             return Exam::findOrFail($data['exam']['id']);
         });
+
+        // Pre-warm the student question cache now (after commit — a rollback must
+        // never leave a poisoned cache) so the exam-start login spike hits a warm
+        // key instead of ~1000 logins racing to rebuild it.
+        $this->examSessions->warmQuestionCache($exam);
+
+        return $exam;
     }
 
     /**
@@ -351,7 +381,9 @@ class SyncService
             foreach ($body['sessions'] ?? [] as $s) {
                 ExamSession::upsert([[
                     'id' => $s['id'],
-                    'exam_id' => $s['exam_id'],
+                    // Pinned to the target exam (not trusted from the body) so a
+                    // results file for exam A can never overwrite exam B's rows.
+                    'exam_id' => $exam->id,
                     'student_id' => $s['student_id'],
                     'started_at' => $s['started_at'],
                     'submitted_at' => $s['submitted_at'],
@@ -379,7 +411,7 @@ class SyncService
             foreach ($body['results'] ?? [] as $r) {
                 ExamResult::upsert([[
                     'id' => $r['id'],
-                    'exam_id' => $r['exam_id'],
+                    'exam_id' => $exam->id, // pinned — see the session upsert above
                     'student_id' => $r['student_id'],
                     'total_score' => $r['total_score'],
                     'total_marks' => $r['total_marks'],
@@ -421,13 +453,27 @@ class SyncService
             return;
         }
 
-        $prepared = array_map(fn (array $row) => array_merge($row, $extra, [
-            'created_at' => $row['created_at'] ?? $now,
-            'updated_at' => $now,
-        ]), $rows);
+        $allowed = array_flip(self::SYNC_COLUMNS[$table]
+            ?? throw new \InvalidArgumentException("No sync column allowlist for [{$table}]."));
 
-        $columns = array_keys($prepared[0]);
-        $update = array_values(array_diff($columns, ['id', 'created_at']));
+        $prepared = array_map(function (array $row) use ($table, $allowed, $extra, $now) {
+            $row = array_intersect_key($row, $allowed);
+
+            if (! isset($row['id'])) {
+                throw ValidationException::withMessages([
+                    'package' => "A [{$table}] row in the package is missing its id.",
+                ]);
+            }
+
+            return array_merge($row, $extra, [
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }, $rows);
+
+        // Fixed column set from the allowlist (not from whatever keys the first
+        // payload row happens to carry), so every row upserts the same columns.
+        $update = array_values(array_diff(array_keys($prepared[0]), ['id', 'created_at']));
 
         DB::table($table)->upsert($prepared, ['id'], $update);
     }

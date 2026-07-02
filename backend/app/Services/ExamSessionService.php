@@ -9,6 +9,8 @@ use App\Models\ExamCode;
 use App\Models\ExamSession;
 use App\Models\Question;
 use App\Models\StudentAnswer;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
@@ -18,6 +20,13 @@ class ExamSessionService
 {
     /** How long the rendered question payload stays cached (exams are immutable once codes exist). */
     private const QUESTIONS_TTL_SECONDS = 43200; // 12 hours
+
+    /**
+     * How long past ends_at the server still accepts answer writes. Must stay
+     * greater than the frontend's 60s bulk-autosave interval (+ debounce and
+     * network slack), so a final flush sent at expiry is never rejected.
+     */
+    private const EXPIRY_GRACE_SECONDS = 120;
 
     /**
      * Authenticate a student by matric number + exam code and start (or resume)
@@ -56,7 +65,17 @@ class ExamSessionService
 
         if (! $session->exists) {
             $session->started_at = now();
-            $session->save();
+
+            try {
+                $session->save();
+            } catch (UniqueConstraintViolationException) {
+                // Double-click / double-tab race: a parallel login inserted the
+                // row first — adopt it. Both requests get tokens for the same
+                // session, which is fine (tokens are stateless claims on its id).
+                $session = ExamSession::where('exam_id', $exam->id)
+                    ->where('student_id', $student->id)
+                    ->firstOrFail();
+            }
 
             $examCode->update(['is_used' => true, 'used_at' => now()]);
         }
@@ -165,11 +184,13 @@ class ExamSessionService
      */
     public function submit(ExamSession $session, bool $autoSubmitted = false): array
     {
-        $this->assertOpen($session);
+        // A submit is never rejected for lateness — a slow client must not lose
+        // graded work. Past the grace window it is force-flagged auto-submitted.
+        $this->assertNotSubmitted($session);
 
         $session->update([
             'submitted_at' => now(),
-            'is_auto_submitted' => $autoSubmitted,
+            'is_auto_submitted' => $autoSubmitted || now()->gt($this->expiresAt($session)),
         ]);
 
         // Grade off the request thread. At exam end every student's timer hits
@@ -221,9 +242,63 @@ class ExamSessionService
         return ExamSession::with('exam')->find($payload['sid']);
     }
 
+    /**
+     * When the server stops accepting answer writes for a session: the exam's
+     * ends_at plus the grace window (the client-facing ends_at excludes grace).
+     */
+    public function expiresAt(ExamSession $session): Carbon
+    {
+        return Carbon::parse($session->started_at ?? now())
+            ->addMinutes($session->exam->duration_minutes)
+            ->addSeconds(self::EXPIRY_GRACE_SECONDS);
+    }
+
+    /**
+     * Force-submit every open session whose time (plus grace) has run out, so a
+     * crashed browser that never auto-submitted still gets graded. Returns the
+     * number of sessions closed. Idempotent; runs from the scheduler.
+     */
+    public function sweepExpiredSessions(): int
+    {
+        $count = 0;
+
+        ExamSession::with('exam')
+            ->whereNull('submitted_at')
+            ->whereNotNull('started_at')
+            ->chunkById(200, function ($sessions) use (&$count) {
+                foreach ($sessions as $session) {
+                    // Expiry is compared in PHP (not SQL date math) because
+                    // duration lives on the exam row and portability matters.
+                    if (now()->lte($this->expiresAt($session))) {
+                        continue;
+                    }
+
+                    try {
+                        $this->submit($session, autoSubmitted: true);
+                        $count++;
+                    } catch (ValidationException) {
+                        // Lost the race with the student's own submit — fine.
+                    }
+                }
+            });
+
+        return $count;
+    }
+
     // ── Internals ─────────────────────────────────────────────────────────────
 
     private function assertOpen(ExamSession $session): void
+    {
+        $this->assertNotSubmitted($session);
+
+        if (now()->gt($this->expiresAt($session))) {
+            throw ValidationException::withMessages([
+                'session' => 'Time is up — this exam is no longer accepting answers.',
+            ]);
+        }
+    }
+
+    private function assertNotSubmitted(ExamSession $session): void
     {
         if ($session->submitted_at) {
             throw ValidationException::withMessages([
@@ -281,31 +356,70 @@ class ExamSessionService
      * Order is the canonical (unshuffled) order_index; per-student shuffling is
      * applied on top in studentQuestions().
      *
+     * A cold key at exam start would let ~1000 simultaneous logins each rebuild
+     * the payload (a full question-bank read), so the rebuild is guarded by an
+     * atomic lock: one request builds, the rest block briefly then read the
+     * fresh cache. The cache is also pre-warmed when an exam package is
+     * imported (warmQuestionCache), so this path is normally already hot.
+     *
      * @return array<int, array<string, mixed>>
      */
     private function examQuestionPayload(Exam $exam): array
     {
-        return Cache::remember(
-            self::questionsCacheKey($exam->id),
-            self::QUESTIONS_TTL_SECONDS,
-            fn () => $exam->questionBank->questions()->with('options')->orderBy('order_index')->get()
-                ->map(function (Question $q) {
-                    $options = $q->question_type === QuestionType::FillBlank
-                        ? []
-                        : $q->options->sortBy('option_label')->values()->map(fn ($o) => [
-                            'label' => $o->option_label,
-                            'text' => $o->option_text,
-                        ])->all();
+        $key = self::questionsCacheKey($exam->id);
 
-                    return [
-                        'id' => $q->id,
-                        'question_text' => $q->question_text,
-                        'question_type' => $q->question_type->value,
-                        'marks' => $q->marks,
-                        'options' => $options,
-                    ];
-                })->all(),
+        $cached = Cache::get($key);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        try {
+            return Cache::lock($key.':build', 20)->block(15, fn () => Cache::remember(
+                $key,
+                self::QUESTIONS_TTL_SECONDS,
+                fn () => $this->buildQuestionPayload($exam),
+            ));
+        } catch (LockTimeoutException) {
+            // Couldn't get the lock in time — serve a direct read rather than 500.
+            return $this->buildQuestionPayload($exam);
+        }
+    }
+
+    /**
+     * Build (and cache) the payload eagerly — called when an exam package is
+     * imported so the first login of the day never pays the rebuild.
+     */
+    public function warmQuestionCache(Exam $exam): void
+    {
+        Cache::put(
+            self::questionsCacheKey($exam->id),
+            $this->buildQuestionPayload($exam),
+            self::QUESTIONS_TTL_SECONDS,
         );
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildQuestionPayload(Exam $exam): array
+    {
+        return $exam->questionBank->questions()->with('options')->orderBy('order_index')->get()
+            ->map(function (Question $q) {
+                $options = $q->question_type === QuestionType::FillBlank
+                    ? []
+                    : $q->options->sortBy('option_label')->values()->map(fn ($o) => [
+                        'label' => $o->option_label,
+                        'text' => $o->option_text,
+                    ])->all();
+
+                return [
+                    'id' => $q->id,
+                    'question_text' => $q->question_text,
+                    'question_type' => $q->question_type->value,
+                    'marks' => $q->marks,
+                    'options' => $options,
+                ];
+            })->all();
     }
 
     /**

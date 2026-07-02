@@ -154,7 +154,11 @@ relevant actions.
 - Sanctum tokens with an 8-hour expiry; forced password change on first login.
 - Role hierarchy enforced server-side via middleware on every route group.
 - Exam Officers are scoped to their own school.
-- Rate limiting: 5 login attempts/min, 60 API requests/min.
+- Rate limiting: 5 login attempts/min, 60 API requests/min, 10 student
+  exam-code login attempts/min per IP.
+- Exam time limits enforced server-side (not just the browser timer): late
+  answers are rejected after a grace window, and a scheduled sweeper
+  force-submits and grades sessions whose browser crashed mid-exam.
 - CORS locked to the configured frontend origin.
 - Audit logging of privileged actions.
 

@@ -251,7 +251,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
 */
 Route::prefix('student/exam')->middleware('offline.mode')->group(function (): void {
     // Phase 8 — Student login (matric + exam code), then token-authenticated flow
-    Route::post('/login', [\App\Http\Controllers\Student\ExamController::class, 'login']);
+    Route::post('/login', [\App\Http\Controllers\Student\ExamController::class, 'login'])
+        ->middleware('throttle:exam-login');
 
     Route::middleware('exam.session')->group(function (): void {
         Route::get('/resume', [\App\Http\Controllers\Student\ExamController::class, 'resume']);

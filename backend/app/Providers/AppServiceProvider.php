@@ -35,5 +35,11 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)
             ->by($request->user()?->id ?: $request->ip()));
+
+        // Student exam login: each student logs in once from their own LAN
+        // machine, so 10/min/IP is generous while making exam-code guessing
+        // impractical. Applies to /student/exam/login only — the in-exam
+        // answer/autosave/submit endpoints must never be throttled.
+        RateLimiter::for('exam-login', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
     }
 }
